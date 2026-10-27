@@ -1,0 +1,19 @@
+{
+  "name": "lost-and-found",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Initial scaffold for the LOST & FOUND campus platform",
+  "type": "module",
+  "main": "backend/src/server.js",
+  "scripts": {
+    "start": "node backend/src/server.js",
+    "dev": "node --watch backend/src/server.js"
+  },
+  "engines": {
+    "node": ">=18.18"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "express": "^4.21.1"
+  }
+}

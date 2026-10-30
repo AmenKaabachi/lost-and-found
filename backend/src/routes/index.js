@@ -1,7 +1,8 @@
 import { Router } from 'express';
+import demoRoutes from '../errors/demo/demo.routes.js';
 
 const router = Router();
 
-// Future module routers will be registered under /api here.
+router.use('/demo', demoRoutes);
 
 export default router;

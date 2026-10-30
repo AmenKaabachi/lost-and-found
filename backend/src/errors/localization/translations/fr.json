@@ -1,0 +1,29 @@
+{
+  "errors": {
+    "VALIDATION_ERROR": "Les données envoyées sont invalides",
+    "RESOURCE_NOT_FOUND": "Ressource introuvable",
+    "UNAUTHORIZED": "Vous devez vous authentifier",
+    "FORBIDDEN": "Vous n'avez pas l'autorisation d'effectuer cette action",
+    "DUPLICATE_RESOURCE": "Cette ressource existe déjà",
+    "BUSINESS_RULE_VIOLATION": "Cette action n'est pas autorisée",
+    "DATABASE_ERROR": "Une erreur de base de données s'est produite",
+    "RATE_LIMITED": "Trop de requêtes",
+    "SERVICE_UNAVAILABLE": "Le service est temporairement indisponible",
+    "INTERNAL_SERVER_ERROR": "Une erreur interne inattendue s'est produite"
+  },
+  "validation": {
+    "required": "Ce champ est obligatoire",
+    "invalidEmail": "Adresse e-mail invalide",
+    "invalidUuid": "Format d'identifiant invalide",
+    "tooShort": "Doit contenir au moins {{minimum}} caractères",
+    "tooLong": "Doit contenir au maximum {{maximum}} caractères",
+    "invalidType": "Type de donnée invalide",
+    "invalidEnum": "Valeur invalide"
+  },
+  "demo": {
+    "declarationCreated": "Déclaration créée avec succès",
+    "declarationDeleted": "Déclaration supprimée avec succès",
+    "health": "Le service de démonstration fonctionne",
+    "internalDetails": "Erreur interne du serveur"
+  }
+}

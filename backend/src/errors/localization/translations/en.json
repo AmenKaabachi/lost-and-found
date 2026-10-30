@@ -1,0 +1,29 @@
+{
+  "errors": {
+    "VALIDATION_ERROR": "The submitted data is invalid",
+    "RESOURCE_NOT_FOUND": "Resource not found",
+    "UNAUTHORIZED": "You must authenticate",
+    "FORBIDDEN": "You do not have permission to perform this action",
+    "DUPLICATE_RESOURCE": "This resource already exists",
+    "BUSINESS_RULE_VIOLATION": "This action is not allowed",
+    "DATABASE_ERROR": "A database error occurred",
+    "RATE_LIMITED": "Too many requests",
+    "SERVICE_UNAVAILABLE": "The service is temporarily unavailable",
+    "INTERNAL_SERVER_ERROR": "An unexpected server error occurred"
+  },
+  "validation": {
+    "required": "This field is required",
+    "invalidEmail": "Invalid email address",
+    "invalidUuid": "Invalid ID format",
+    "tooShort": "Must contain at least {{minimum}} characters",
+    "tooLong": "Must contain no more than {{maximum}} characters",
+    "invalidType": "Invalid data type",
+    "invalidEnum": "Invalid value"
+  },
+  "demo": {
+    "declarationCreated": "Declaration created successfully",
+    "declarationDeleted": "Declaration deleted successfully",
+    "health": "Demo service is healthy",
+    "internalDetails": "Internal server error"
+  }
+}

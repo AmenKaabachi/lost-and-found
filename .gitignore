@@ -14,3 +14,7 @@ build/
 Thumbs.db
 .vscode/*
 !.vscode/settings.json
+.env
+coverage/
+test-results/
+*.log

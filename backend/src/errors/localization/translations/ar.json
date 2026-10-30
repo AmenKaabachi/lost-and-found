@@ -1,0 +1,29 @@
+{
+  "errors": {
+    "VALIDATION_ERROR": "البيانات المرسلة غير صالحة",
+    "RESOURCE_NOT_FOUND": "المورد غير موجود",
+    "UNAUTHORIZED": "يجب تسجيل الدخول",
+    "FORBIDDEN": "ليس لديك صلاحية لتنفيذ هذا الإجراء",
+    "DUPLICATE_RESOURCE": "هذا المورد موجود بالفعل",
+    "BUSINESS_RULE_VIOLATION": "هذا الإجراء غير مسموح",
+    "DATABASE_ERROR": "حدث خطأ في قاعدة البيانات",
+    "RATE_LIMITED": "طلبات كثيرة جدا",
+    "SERVICE_UNAVAILABLE": "الخدمة غير متاحة مؤقتا",
+    "INTERNAL_SERVER_ERROR": "حدث خطأ غير متوقع في الخادم"
+  },
+  "validation": {
+    "required": "هذا الحقل مطلوب",
+    "invalidEmail": "عنوان البريد الإلكتروني غير صالح",
+    "invalidUuid": "تنسيق المعرف غير صالح",
+    "tooShort": "يجب أن يحتوي على {{minimum}} أحرف على الأقل",
+    "tooLong": "يجب ألا يحتوي على أكثر من {{maximum}} أحرف",
+    "invalidType": "نوع البيانات غير صالح",
+    "invalidEnum": "قيمة غير صالحة"
+  },
+  "demo": {
+    "declarationCreated": "تم إنشاء التصريح بنجاح",
+    "declarationDeleted": "تم حذف التصريح بنجاح",
+    "health": "خدمة العرض تعمل بشكل سليم",
+    "internalDetails": "خطأ داخلي في الخادم"
+  }
+}

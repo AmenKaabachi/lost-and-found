@@ -1,0 +1,1 @@
+{"email":"rezgui.adam004@gmail.com","code":"116732"}  -X POST http://localhost:3000/api/auth/verify-email -H "Content-Type: application/json" -d @verify.json

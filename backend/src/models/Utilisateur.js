@@ -27,9 +27,8 @@ const utilisateurSchema = new mongoose.Schema({
   resetPasswordExpires: { type: Date, default: null }
 }, { timestamps: true });
 
-utilisateurSchema.pre('save', function (next) {
+utilisateurSchema.pre('save', function () {
   this.actif = this.statut === StatutUtilisateur.ACTIF;
-  next();
 });
 
 utilisateurSchema.methods.toJSON = function () {

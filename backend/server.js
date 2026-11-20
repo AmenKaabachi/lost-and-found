@@ -12,6 +12,7 @@ import { generalLimiter } from './src/middlewares/rateLimiter.js';
 import authRoutes from './src/routes/authRoutes.js';
 import userRoutes from './src/routes/userRoutes.js';
 import declarationRoutes from './src/routes/declarationRoutes.js';
+import searchRoutes from './src/routes/search/searchRoutes.js';
 import logger from './src/errors/logging/logger.js';
 
 dotenv.config();
@@ -35,6 +36,9 @@ app.use(generalLimiter);
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/declarations', declarationRoutes);
+
+// Search & Exploration
+app.use('/api/search', searchRoutes);
 
 // 404 + Handler global d'erreurs
 app.use(notFoundHandler);

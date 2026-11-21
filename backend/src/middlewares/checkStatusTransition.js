@@ -1,6 +1,6 @@
 import { AppError } from '../errors/core/AppError.js';
 import { ERROR_CODES } from '../errors/core/errorCodes.js';
-import { translations } from '../errors/localization/translation.js';
+import { resolveLocale, translations } from '../errors/localization/translation.js';
 import { Role, StatutDeclaration } from '../models/enums.js';
 
 const AUTHOR_TRANSITIONS = {
@@ -13,7 +13,7 @@ const AUTHOR_TRANSITIONS = {
 };
 
 export const checkStatusTransition = (req, res, next) => {
-  const m = translations[req.locale];
+  const m = translations[resolveLocale(req.locale)];
   const newStatus = req.body.statut;
   const currentStatus = req.declaration.statut;
   const isAdmin = [Role.ADMIN, Role.SUPER_ADMIN].includes(req.user.role);

@@ -1,6 +1,7 @@
 // 1. Imports
 import { sendSuccess } from '../../errors/core/responseHelpers.js';
 import { asyncHandler } from '../../errors/middleware/asyncHandler.js';
+import { translations } from '../../errors/localization/translation.js';
 import {
   searchDeclarations as searchDeclarationsService,
   searchDeclarationsOnMap as searchDeclarationsOnMapService
@@ -8,23 +9,25 @@ import {
 
 // 2. Controller Functions
 export const searchDeclarations = asyncHandler(async (req, res) => {
+  const m = translations[req.locale];
   const { declarations, pagination } = await searchDeclarationsService(req.query);
 
   // 3. Response Handling
   const message = declarations.length > 0
-    ? 'Declarations found'
-    : 'No declarations match your search';
+    ? m.declarationsFound
+    : m.noDeclarationsFound;
 
   sendSuccess(res, declarations, message, 200, { pagination });
 });
 
 export const searchMap = asyncHandler(async (req, res) => {
+  const m = translations[req.locale];
   const declarations = await searchDeclarationsOnMapService(req.query);
 
   // 3. Response Handling
   const message = declarations.length > 0
-    ? 'Declarations found'
-    : 'No declarations match your map search';
+    ? m.declarationsFound
+    : m.noMapDeclarationsFound;
 
   sendSuccess(res, declarations, message, 200);
 });

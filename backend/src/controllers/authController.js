@@ -24,7 +24,7 @@ export const register = asyncHandler(async (req, res) => {
   const { email } = req.body;
 
   const existing = await Utilisateur.findOne({ email });
-  if (existing) throw new AppError(409, ERROR_CODES.CONFLICT, m.conflict('email'));
+  if (existing) throw new AppError(409, ERROR_CODES.CONFLICT, m.conflict(m.emailField));
 
   const passwordHash = await bcrypt.hash(req.body.password, 10);
   const code = generateCode();
@@ -57,7 +57,7 @@ export const register = asyncHandler(async (req, res) => {
     logger.error({ err, email }, 'Failed to send verification email');
   }
 
-  sendSuccess(res, { email: utilisateur.email }, 'Account created. Check your email for verification code.', 201);
+  sendSuccess(res, { email: utilisateur.email }, m.accountCreated, 201);
 });
 
 // ─── POST /api/auth/verify-email ───────────────
@@ -66,11 +66,11 @@ export const verifyEmail = asyncHandler(async (req, res) => {
   const { email, code } = req.body;
 
   const utilisateur = await Utilisateur.findOne({ email });
-  if (!utilisateur) throw new AppError(404, ERROR_CODES.RESOURCE_NOT_FOUND, m.notFound('Utilisateur'));
+  if (!utilisateur) throw new AppError(404, ERROR_CODES.RESOURCE_NOT_FOUND, m.notFound(m.user));
 
   // Idempotence : si déjà vérifié, on renvoie succès sans rien faire
   if (utilisateur.emailVerifie) {
-    return sendSuccess(res, null, 'Email already verified. You can log in.');
+    return sendSuccess(res, null, m.emailAlreadyVerified);
   }
 
   // Code expiré ou absent
@@ -101,7 +101,7 @@ export const verifyEmail = asyncHandler(async (req, res) => {
   utilisateur.verificationAttempts = 0;
   await utilisateur.save();
 
-  sendSuccess(res, null, 'Email verified successfully');
+  sendSuccess(res, null, m.emailVerified);
 });
 
 // ─── POST /api/auth/resend-verification-code ───
@@ -112,7 +112,7 @@ export const resendVerificationCode = asyncHandler(async (req, res) => {
   const utilisateur = await Utilisateur.findOne({ email });
 
   // Anti-énumération : réponse identique que le compte existe ou non
-  const GENERIC_RESPONSE = 'If the account exists, a new verification code has been sent';
+  const GENERIC_RESPONSE = m.verificationCodeResent;
 
   if (!utilisateur || utilisateur.emailVerifie) {
     return sendSuccess(res, null, GENERIC_RESPONSE);
@@ -123,11 +123,7 @@ export const resendVerificationCode = asyncHandler(async (req, res) => {
     const elapsed = Date.now() - new Date(utilisateur.lastVerificationSentAt).getTime();
     if (elapsed < RESEND_COOLDOWN_MS) {
       const waitSec = Math.ceil((RESEND_COOLDOWN_MS - elapsed) / 1000);
-      const msg = req.locale === 'fr'
-        ? `Veuillez patienter ${waitSec} seconde(s) avant de demander un nouveau code`
-        : req.locale === 'ar'
-        ? `يرجى الانتظار ${waitSec} ثانية قبل طلب رمز جديد`
-        : `Please wait ${waitSec}s before requesting a new code`;
+      const msg = m.waitBeforeVerificationCode(waitSec);
       throw new AppError(429, ERROR_CODES.TOO_MANY_REQUESTS, msg);
     }
   }
@@ -180,7 +176,7 @@ export const login = asyncHandler(async (req, res) => {
     { expiresIn: '7d' }
   );
 
-  sendSuccess(res, { accessToken, refreshToken, user: utilisateur.toJSON() }, 'Logged in successfully');
+  sendSuccess(res, { accessToken, refreshToken, user: utilisateur.toJSON() }, m.loggedIn);
 });
 
 // ─── GET /api/auth/me ──────────────────────────
@@ -200,20 +196,21 @@ export const changePassword = asyncHandler(async (req, res) => {
   utilisateur.passwordHash = await bcrypt.hash(newPassword, 10);
   await utilisateur.save();
 
-  sendSuccess(res, null, 'Password changed successfully');
+  sendSuccess(res, null, m.passwordChanged);
 });
 
 // ─── POST /api/auth/logout ─────────────────────
 export const logout = asyncHandler(async (req, res) => {
   // Le client supprime le token ; si vous voulez une blacklist, ajoutez-la ici
-  sendSuccess(res, null, 'Logged out successfully');
+  sendSuccess(res, null, m.loggedOut);
 });
 
 // ─── POST /api/auth/forgot-password ────────────
 export const forgotPassword = asyncHandler(async (req, res) => {
+  const m = translations[req.locale];
   const utilisateur = await Utilisateur.findOne({ email: req.body.email });
 
-  const GENERIC = 'If the email exists, a reset link has been sent';
+  const GENERIC = m.resetLinkSent;
 
   if (!utilisateur) return sendSuccess(res, null, GENERIC);
 
@@ -240,6 +237,7 @@ export const forgotPassword = asyncHandler(async (req, res) => {
 
 // ─── POST /api/auth/reset-password ─────────────
 export const resetPassword = asyncHandler(async (req, res) => {
+  const m = translations[req.locale];
   const hashedToken = crypto.createHash('sha256').update(req.body.token).digest('hex');
   const utilisateur = await Utilisateur.findOne({
     resetPasswordToken: hashedToken,
@@ -247,7 +245,7 @@ export const resetPassword = asyncHandler(async (req, res) => {
   });
 
   if (!utilisateur) {
-    throw new AppError(400, ERROR_CODES.VALIDATION_ERROR, 'Token invalid or expired');
+    throw new AppError(400, ERROR_CODES.VALIDATION_ERROR, m.resetTokenInvalid);
   }
 
   utilisateur.passwordHash = await bcrypt.hash(req.body.newPassword, 10);
@@ -255,5 +253,5 @@ export const resetPassword = asyncHandler(async (req, res) => {
   utilisateur.resetPasswordExpires = null;
   await utilisateur.save();
 
-  sendSuccess(res, null, 'Password reset successfully');
+  sendSuccess(res, null, m.passwordReset);
 });

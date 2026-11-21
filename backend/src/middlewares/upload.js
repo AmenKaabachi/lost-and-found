@@ -1,6 +1,9 @@
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
+import { AppError } from '../errors/core/AppError.js';
+import { ERROR_CODES } from '../errors/core/errorCodes.js';
+import { translations } from '../errors/localization/translation.js';
 
 const uploadDir = 'uploads/';
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
@@ -15,7 +18,14 @@ const storage = multer.diskStorage({
 
 const fileFilter = (req, file, cb) => {
   if (['image/jpeg', 'image/png', 'image/webp'].includes(file.mimetype)) cb(null, true);
-  else cb(new Error('Format non supporté (jpg, png, webp uniquement)'), false);
+  else {
+    const locale = req.locale || 'en';
+    cb(new AppError(
+      400,
+      ERROR_CODES.VALIDATION_ERROR,
+      translations[locale]?.unsupportedFileFormat || translations.en.unsupportedFileFormat
+    ), false);
+  }
 };
 
 export const upload = multer({

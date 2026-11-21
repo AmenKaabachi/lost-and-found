@@ -2,12 +2,12 @@ import jwt from 'jsonwebtoken';
 import Utilisateur from '../models/Utilisateur.js';
 import { AppError } from '../errors/core/AppError.js';
 import { ERROR_CODES } from '../errors/core/errorCodes.js';
-import { translations } from '../errors/localization/translation.js';
+import { resolveLocale, translations } from '../errors/localization/translation.js';
 import { asyncHandler } from '../errors/middleware/asyncHandler.js';
 import { StatutUtilisateur } from '../models/enums.js';
 
 export const authMiddleware = asyncHandler(async (req, res, next) => {
-  const m = translations[req.locale];
+  const m = translations[resolveLocale(req.locale)];
   const header = req.headers.authorization;
   if (!header || !header.startsWith('Bearer ')) {
     throw new AppError(401, ERROR_CODES.UNAUTHORIZED, m.unauthorized);

@@ -1,10 +1,10 @@
 import { AppError } from './AppError.js';
 import { ERROR_CODES } from './errorCodes.js';
-import { translations } from '../localization/translation.js';
+import { resolveLocale, translations } from '../localization/translation.js';
 import logger from '../logging/logger.js';
 
 export const errorHandler = (err, req, res, next) => {
-  const locale = req.locale || 'en';
+  const locale = resolveLocale(req.locale);
   
   if (err instanceof AppError) {
     if (err.statusCode >= 500) logger.error(err);

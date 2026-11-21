@@ -13,12 +13,13 @@ export const getMyProfile = asyncHandler(async (req, res) => {
 });
 
 export const updateMyProfile = asyncHandler(async (req, res) => {
+  const m = translations[req.locale];
   const allowed = ['nom', 'prenom', 'telephone', 'avatar', 'notificationsEmail'];
   const updates = {};
   allowed.forEach(k => { if (req.body[k] !== undefined) updates[k] = req.body[k]; });
 
   const utilisateur = await Utilisateur.findByIdAndUpdate(req.user._id, updates, { new: true, runValidators: true });
-  sendSuccess(res, utilisateur.toJSON(), 'Profile updated');
+  sendSuccess(res, utilisateur.toJSON(), m.profileUpdated);
 });
 
 export const deleteMyAccount = asyncHandler(async (req, res) => {
@@ -34,7 +35,7 @@ export const deleteMyAccount = asyncHandler(async (req, res) => {
   utilisateur.avatar = null;
   await utilisateur.save();
 
-  sendSuccess(res, null, 'Account deleted');
+  sendSuccess(res, null, m.accountDeleted);
 });
 
 export const getMyDeclarations = asyncHandler(async (req, res) => {
@@ -58,7 +59,7 @@ export const getMyDeclarations = asyncHandler(async (req, res) => {
 export const getUserById = asyncHandler(async (req, res) => {
   const m = translations[req.locale];
   const utilisateur = await Utilisateur.findById(req.params.id);
-  if (!utilisateur) throw new AppError(404, ERROR_CODES.RESOURCE_NOT_FOUND, m.notFound('Utilisateur'));
+  if (!utilisateur) throw new AppError(404, ERROR_CODES.RESOURCE_NOT_FOUND, m.notFound(m.user));
 
   const isAdmin = [Role.ADMIN, Role.SUPER_ADMIN].includes(req.user.role);
   const data = isAdmin
@@ -87,7 +88,7 @@ export const listUsers = asyncHandler(async (req, res) => {
 export const getUserDeclarations = asyncHandler(async (req, res) => {
   const m = translations[req.locale];
   const utilisateur = await Utilisateur.findById(req.params.id);
-  if (!utilisateur) throw new AppError(404, ERROR_CODES.RESOURCE_NOT_FOUND, m.notFound('Utilisateur'));
+  if (!utilisateur) throw new AppError(404, ERROR_CODES.RESOURCE_NOT_FOUND, m.notFound(m.user));
 
   const declarations = await Declaration.find({ declarantId: req.params.id, isDeleted: false })
     .sort({ createdAt: -1 })
@@ -103,8 +104,8 @@ export const updateUserByAdmin = asyncHandler(async (req, res) => {
   allowed.forEach(k => { if (req.body[k] !== undefined) updates[k] = req.body[k]; });
 
   const utilisateur = await Utilisateur.findByIdAndUpdate(req.params.id, updates, { new: true, runValidators: true });
-  if (!utilisateur) throw new AppError(404, ERROR_CODES.RESOURCE_NOT_FOUND, m.notFound('Utilisateur'));
-  sendSuccess(res, utilisateur.toJSON(), 'User updated');
+  if (!utilisateur) throw new AppError(404, ERROR_CODES.RESOURCE_NOT_FOUND, m.notFound(m.user));
+  sendSuccess(res, utilisateur.toJSON(), m.userUpdated);
 });
 
 export const updateUserStatus = asyncHandler(async (req, res) => {
@@ -114,8 +115,8 @@ export const updateUserStatus = asyncHandler(async (req, res) => {
     { statut: req.body.statut },
     { new: true, runValidators: true }
   );
-  if (!utilisateur) throw new AppError(404, ERROR_CODES.RESOURCE_NOT_FOUND, m.notFound('Utilisateur'));
-  sendSuccess(res, utilisateur.toJSON(), 'User status updated');
+  if (!utilisateur) throw new AppError(404, ERROR_CODES.RESOURCE_NOT_FOUND, m.notFound(m.user));
+  sendSuccess(res, utilisateur.toJSON(), m.userStatusUpdated);
 });
 
 export const updateUserRole = asyncHandler(async (req, res) => {
@@ -125,14 +126,14 @@ export const updateUserRole = asyncHandler(async (req, res) => {
     { role: req.body.role },
     { new: true, runValidators: true }
   );
-  if (!utilisateur) throw new AppError(404, ERROR_CODES.RESOURCE_NOT_FOUND, m.notFound('Utilisateur'));
-  sendSuccess(res, utilisateur.toJSON(), 'User role updated');
+  if (!utilisateur) throw new AppError(404, ERROR_CODES.RESOURCE_NOT_FOUND, m.notFound(m.user));
+  sendSuccess(res, utilisateur.toJSON(), m.userRoleUpdated);
 });
 
 export const createAdmin = asyncHandler(async (req, res) => {
   const m = translations[req.locale];
   const existing = await Utilisateur.findOne({ email: req.body.email });
-  if (existing) throw new AppError(409, ERROR_CODES.CONFLICT, m.conflict('email'));
+  if (existing) throw new AppError(409, ERROR_CODES.CONFLICT, m.conflict(m.emailField));
 
   const passwordHash = await bcrypt.hash(req.body.password, 10);
   const admin = await Utilisateur.create({
@@ -145,7 +146,7 @@ export const createAdmin = asyncHandler(async (req, res) => {
     emailVerifie: true
   });
 
-  sendSuccess(res, admin.toJSON(), 'Admin created', 201);
+  sendSuccess(res, admin.toJSON(), m.adminCreated, 201);
 });
 
 export const deleteUserByAdmin = asyncHandler(async (req, res) => {
@@ -155,6 +156,6 @@ export const deleteUserByAdmin = asyncHandler(async (req, res) => {
     { statut: StatutUtilisateur.SUSPENDU },
     { new: true }
   );
-  if (!utilisateur) throw new AppError(404, ERROR_CODES.RESOURCE_NOT_FOUND, m.notFound('Utilisateur'));
-  sendSuccess(res, null, 'User account suspended');
+  if (!utilisateur) throw new AppError(404, ERROR_CODES.RESOURCE_NOT_FOUND, m.notFound(m.user));
+  sendSuccess(res, null, m.userAccountSuspended);
 });

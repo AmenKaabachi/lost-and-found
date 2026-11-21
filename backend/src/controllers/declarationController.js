@@ -19,10 +19,11 @@ const logAction = async (acteurId, action, entiteId, details = {}) => {
 };
 
 export const createDeclaration = asyncHandler(async (req, res) => {
+  const m = translations[req.locale];
   const photos = req.files ? req.files.map(f => f.path) : [];
 
   const categorieName = (req.body.categorie || '').trim();
-  if (!categorieName) throw new AppError(400, ERROR_CODES.VALIDATION_ERROR, 'Catégorie requise');
+  if (!categorieName) throw new AppError(400, ERROR_CODES.VALIDATION_ERROR, m.categoryRequired);
 
   let categorieDoc = await Categorie.findOne({ nom: categorieName, active: true });
   if (!categorieDoc) categorieDoc = await Categorie.create({ nom: categorieName });
@@ -57,7 +58,7 @@ export const createDeclaration = asyncHandler(async (req, res) => {
   });
 
   await logAction(req.user._id, 'CREATE', declaration._id, { statut, type: declaration.type });
-  sendSuccess(res, declaration, `Declaration created with status ${statut}`, 201);
+  sendSuccess(res, declaration, m.declarationCreated(statut), 201);
 });
 
 export const getDeclarationById = asyncHandler(async (req, res) => {
@@ -66,13 +67,13 @@ export const getDeclarationById = asyncHandler(async (req, res) => {
     .populate('declarantId', 'nom prenom email telephone avatar')
     .populate('categorieId', 'nom');
 
-  if (!declaration) throw new AppError(404, ERROR_CODES.RESOURCE_NOT_FOUND, m.notFound('Déclaration'));
+  if (!declaration) throw new AppError(404, ERROR_CODES.RESOURCE_NOT_FOUND, m.notFound(m.declaration));
 
   const isOwner = declaration.declarantId._id.toString() === req.user._id.toString();
   const isAdmin = [Role.ADMIN, Role.SUPER_ADMIN].includes(req.user.role);
 
   if (declaration.statut !== StatutDeclaration.ACTIVE && !isOwner && !isAdmin) {
-    throw new AppError(404, ERROR_CODES.RESOURCE_NOT_FOUND, m.notFound('Déclaration'));
+    throw new AppError(404, ERROR_CODES.RESOURCE_NOT_FOUND, m.notFound(m.declaration));
   }
 
   const data = declaration.toJSON();
@@ -135,10 +136,11 @@ export const updateDeclaration = asyncHandler(async (req, res) => {
   }
 
   await declaration.save();
-  sendSuccess(res, declaration, 'Declaration updated');
+  sendSuccess(res, declaration, m.declarationUpdated);
 });
 
 export const updateDeclarationStatus = asyncHandler(async (req, res) => {
+  const m = translations[req.locale];
   const declaration = req.declaration;
   const ancienStatut = declaration.statut;
 
@@ -154,14 +156,15 @@ export const updateDeclarationStatus = asyncHandler(async (req, res) => {
     motif: req.body.motif
   });
 
-  sendSuccess(res, declaration, 'Status updated');
+  sendSuccess(res, declaration, m.declarationStatusUpdated);
 });
 
 export const deleteDeclaration = asyncHandler(async (req, res) => {
+  const m = translations[req.locale];
   req.declaration.isDeleted = true;
   await req.declaration.save();
   await logAction(req.user._id, 'DELETE', req.declaration._id, {});
-  sendSuccess(res, null, 'Declaration deleted');
+  sendSuccess(res, null, m.declarationDeleted);
 });
 
 export const getDeclarationHistory = asyncHandler(async (req, res) => {
@@ -212,7 +215,7 @@ export const validateDeclaration = asyncHandler(async (req, res) => {
     nouveauStatut: declaration.statut
   });
 
-  sendSuccess(res, declaration, 'Declaration validated and published');
+  sendSuccess(res, declaration, m.declarationValidated);
 });
 
 export const rejectDeclaration = asyncHandler(async (req, res) => {
@@ -233,5 +236,5 @@ export const rejectDeclaration = asyncHandler(async (req, res) => {
     motif: req.body.motif
   });
 
-  sendSuccess(res, declaration, 'Declaration rejected');
+  sendSuccess(res, declaration, m.declarationRejected);
 });

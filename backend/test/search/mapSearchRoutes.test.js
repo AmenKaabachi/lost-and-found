@@ -7,6 +7,7 @@ import searchRoutes from '../../src/routes/search/searchRoutes.js';
 import Utilisateur from '../../src/models/Utilisateur.js';
 import Declaration from '../../src/models/Declaration.js';
 import { errorHandler } from '../../src/errors/core/errorHandler.js';
+import { localeMiddleware } from '../../src/errors/localization/localeMiddleware.js';
 
 // 2. Test Setup
 const listen = (app) => new Promise((resolve) => {
@@ -45,10 +46,7 @@ test('Map route validates inputs and returns success', async (t) => {
 
   const app = express();
   app.use(express.json());
-  app.use((req, _res, next) => {
-    req.locale = 'en';
-    next();
-  });
+  app.use(localeMiddleware);
   app.use('/api/search', searchRoutes);
   app.use(errorHandler);
 
@@ -90,6 +88,20 @@ test('Map route validates inputs and returns success', async (t) => {
     const body = await response.json();
     assert.equal(body.success, false);
     assert.equal(body.error.code, 'VALIDATION_ERROR');
+  }
+
+  for (const [language, expectedMessage] of [
+    ['fr', 'Latitude invalide'],
+    ['ar', 'خط العرض غير صالح'],
+    ['xx', 'Invalid latitude']
+  ]) {
+    const response = await fetch(
+      `${baseUrl}/api/search/map?minLat=abc&maxLat=36.83&minLng=10.17&maxLng=10.20`,
+      { headers: { ...headers, 'X-Language': language } }
+    );
+    assert.equal(response.status, 400);
+    const body = await response.json();
+    assert.equal(body.error.details.minLat[0], expectedMessage);
   }
 
   for (const suffix of [

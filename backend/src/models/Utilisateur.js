@@ -1,5 +1,5 @@
 import mongoose from 'mongoose';
-import { Role, TypeMembre, StatutUtilisateur } from './enums.js';
+import { Role, TypeMembre, StatutUtilisateur, MoyenTransport } from './enums.js';
 
 const utilisateurSchema = new mongoose.Schema({
   nom: { type: String, required: true, trim: true },
@@ -9,6 +9,9 @@ const utilisateurSchema = new mongoose.Schema({
   role: { type: String, enum: Object.values(Role), default: Role.MEMBRE },
   typeMembre: { type: String, enum: Object.values(TypeMembre), default: TypeMembre.ETUDIANT },
   telephone: { type: String, default: null },
+  moyenTransport: { type: String, enum: [...Object.values(MoyenTransport), null], default: null },
+  lieuResidence: { type: String, trim: true, default: null },
+  nomEtablissement: { type: String, trim: true, default: null },
   actif: { type: Boolean, default: false },
   avatar: { type: String, default: null },
   notificationsEmail: { type: Boolean, default: true },
@@ -27,9 +30,8 @@ const utilisateurSchema = new mongoose.Schema({
   resetPasswordExpires: { type: Date, default: null }
 }, { timestamps: true });
 
-utilisateurSchema.pre('save', function (next) {
+utilisateurSchema.pre('save', function () {
   this.actif = this.statut === StatutUtilisateur.ACTIF;
-  next();
 });
 
 utilisateurSchema.methods.toJSON = function () {

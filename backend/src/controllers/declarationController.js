@@ -87,11 +87,11 @@ export const updateDeclaration = asyncHandler(async (req, res) => {
   const m = translations[req.locale];
   const declaration = req.declaration;
 
-  if ([StatutDeclaration.MASQUEE, StatutDeclaration.ANNULEE, StatutDeclaration.RESTITUEE].includes(declaration.statut)) {
+  const isOwner = req.user._id.toString() === declaration.declarantId.toString();
+
+  if (isOwner && [StatutDeclaration.MASQUEE, StatutDeclaration.ANNULEE, StatutDeclaration.RESTITUEE].includes(declaration.statut)) {
     throw new AppError(409, ERROR_CODES.STATUS_TRANSITION_FORBIDDEN, m.statusTransitionForbidden);
   }
-
-  const isOwner = req.user._id.toString() === declaration.declarantId.toString();
 
   if (req.body.titre) declaration.titre = req.body.titre;
   if (req.body.description) declaration.description = req.body.description;

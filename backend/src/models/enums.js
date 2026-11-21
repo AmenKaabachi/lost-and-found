@@ -17,6 +17,16 @@ export const StatutUtilisateur = Object.freeze({
   SUSPENDU: 'SUSPENDU'
 });
 
+export const MoyenTransport = Object.freeze({
+  BUS: 'BUS',
+  METRO: 'METRO',
+  TRAIN: 'TRAIN',
+  VOITURE: 'VOITURE',
+  LOUAGE: 'LOUAGE',
+  MARCHE: 'MARCHE',
+  AUTRE: 'AUTRE'
+});
+
 export const TypeDeclaration = Object.freeze({
   PERDU: 'PERDU',
   TROUVE: 'TROUVE'

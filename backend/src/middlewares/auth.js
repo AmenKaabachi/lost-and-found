@@ -14,7 +14,8 @@ export const authMiddleware = asyncHandler(async (req, res, next) => {
   }
   const token = header.split(' ')[1];
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const jwtSecret = process.env.JWT_SECRET || 'replace-with-a-local-development-secret';
+    const decoded = jwt.verify(token, jwtSecret);
     const utilisateur = await Utilisateur.findById(decoded.id);
     if (!utilisateur) throw new AppError(401, ERROR_CODES.UNAUTHORIZED, m.unauthorized);
     if (utilisateur.statut === StatutUtilisateur.SUSPENDU) {

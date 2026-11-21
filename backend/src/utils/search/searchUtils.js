@@ -1,3 +1,4 @@
+// 1. Constants
 const ACCENT_VARIANTS = {
   a: '[aA\u00e0\u00c0\u00e1\u00c1\u00e2\u00c2\u00e3\u00c3\u00e4\u00c4\u00e5\u00c5]',
   c: '[cC\u00e7\u00c7]',
@@ -9,6 +10,7 @@ const ACCENT_VARIANTS = {
   y: '[yY\u00fd\u00dd\u00ff]'
 };
 
+// 2. Text Normalization
 export const normalizeText = (text) => String(text ?? '')
   .normalize('NFD')
   .replace(/[\u0300-\u036f]/g, '')
@@ -22,15 +24,18 @@ export const removeAccents = (text) => String(text ?? '')
   .normalize('NFD')
   .replace(/[\u0300-\u036f]/g, '');
 
+// 3. Text Whitespace
 export const normalizeWhitespace = (text) => String(text ?? '')
   .replace(/\s+/g, ' ')
   .trim();
 
+// 4. Query Tokenization
 export const tokenizeQuery = (query) => {
   const normalized = normalizeText(query);
   return normalized ? normalized.split(' ').filter(Boolean) : [];
 };
 
+// 5. Regex Helpers
 export const escapeRegex = (text) => String(text ?? '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 export const buildKeywordRegex = (text) => {
@@ -42,6 +47,9 @@ export const buildKeywordRegex = (text) => {
   return new RegExp(pattern, 'i');
 };
 
+export const buildPartialMatchRegex = (text) => buildKeywordRegex(text);
+
+// 6. Search Matching
 export const textMatchesKeywords = (text, query) => {
   const normalizedText = normalizeText(text);
   return tokenizeQuery(query).every((token) =>

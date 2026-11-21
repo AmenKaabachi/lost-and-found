@@ -1,6 +1,8 @@
+// 1. Imports
 import mongoose from 'mongoose';
 import { TypeDeclaration } from './enums.js';
 
+// 2. Filter Schema
 const filtresRechercheSchema = new mongoose.Schema({
   type: { type: String, enum: [...Object.values(TypeDeclaration), null], default: null },
   q: { type: String, default: null, trim: true },
@@ -17,6 +19,7 @@ const filtresRechercheSchema = new mongoose.Schema({
   sort: { type: String, enum: ['date', 'pertinence', 'distance', null], default: null }
 }, { _id: false });
 
+// 3. Search Schema
 const rechercheEnregistreeSchema = new mongoose.Schema({
   utilisateurId: {
     type: mongoose.Schema.Types.ObjectId,
@@ -28,8 +31,10 @@ const rechercheEnregistreeSchema = new mongoose.Schema({
   alerteEmail: { type: Boolean, default: false }
 }, { timestamps: true });
 
+// 4. Indexes
 rechercheEnregistreeSchema.index({ utilisateurId: 1, createdAt: -1 });
 
+// 5. Model Creation and Export
 export default mongoose.model(
   'RechercheEnregistree',
   rechercheEnregistreeSchema,

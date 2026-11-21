@@ -4,6 +4,7 @@ import * as authController from '../controllers/authController.js';
 import { validateRequest } from '../errors/validation/validateRequest.js';
 import { authLimiter } from '../middlewares/rateLimiter.js';
 import { authMiddleware } from '../middlewares/auth.js';
+import { MoyenTransport } from '../models/enums.js';
 
 const router = Router();
 const INSTITUTIONAL_DOMAIN = '';
@@ -13,7 +14,10 @@ router.post('/register', authLimiter, validateRequest(z.object({
   prenom: z.string().min(2),
   email: z.string().email().refine(v => v.endsWith(INSTITUTIONAL_DOMAIN), { message: 'Email institutionnel requis' }),
   password: z.string().min(8),
-  telephone: z.string().optional()
+  telephone: z.string().optional(),
+  moyenTransport: z.nativeEnum(MoyenTransport).optional(),
+  lieuResidence: z.string().trim().max(100).optional(),
+  nomEtablissement: z.string().trim().max(150).optional()
 })), authController.register);
 
 router.post('/verify-email', authLimiter, validateRequest(z.object({

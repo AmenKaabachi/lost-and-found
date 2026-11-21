@@ -56,3 +56,82 @@ export const textMatchesKeywords = (text, query) => {
     buildKeywordRegex(token).test(normalizedText)
   );
 };
+
+// 7. Relevance Helpers
+const RELEVANCE_WEIGHTS = {
+  title: 50,
+  description: 20,
+  object: 30,
+  location: 25
+};
+
+export const calculateRelevanceScore = (declaration, query) => {
+  const tokens = tokenizeQuery(query);
+  if (tokens.length === 0) return 0;
+
+  const details = declaration.detailsObjet || {};
+  const location = declaration.lieu || {};
+  let score = 0;
+
+  for (const token of tokens) {
+    const matcher = buildKeywordRegex(token);
+    if (matcher.test(normalizeText(declaration.titre))) score += RELEVANCE_WEIGHTS.title;
+    if (matcher.test(normalizeText(declaration.description))) score += RELEVANCE_WEIGHTS.description;
+
+    const objectFields = [
+      details.marque,
+      details.modele,
+      details.couleur,
+      details.signesDistinctifs
+    ];
+    if (objectFields.some((field) => matcher.test(normalizeText(field)))) {
+      score += RELEVANCE_WEIGHTS.object;
+    }
+
+    const locationFields = [location.nomLieu, location.zone];
+    if (locationFields.some((field) => matcher.test(normalizeText(field)))) {
+      score += RELEVANCE_WEIGHTS.location;
+    }
+  }
+
+  return score;
+};
+
+// 8. Distance Helpers
+export const haversineDistanceKm = (latitude1, longitude1, latitude2, longitude2) => {
+  const toRadians = (degrees) => degrees * (Math.PI / 180);
+  const earthRadiusKm = 6371;
+  const latitudeDelta = toRadians(latitude2 - latitude1);
+  const longitudeDelta = toRadians(longitude2 - longitude1);
+  const firstLatitude = toRadians(latitude1);
+  const secondLatitude = toRadians(latitude2);
+  const haversine =
+    Math.sin(latitudeDelta / 2) ** 2
+    + Math.cos(firstLatitude) * Math.cos(secondLatitude) * Math.sin(longitudeDelta / 2) ** 2;
+
+  return earthRadiusKm * 2 * Math.atan2(Math.sqrt(haversine), Math.sqrt(1 - haversine));
+};
+
+// 9. Radius Helpers
+export const isWithinRadius = (declaration, latitude, longitude, radiusMeters) => {
+  const declarationLatitude = declaration?.lieu?.latitude;
+  const declarationLongitude = declaration?.lieu?.longitude;
+
+  if (!Number.isFinite(declarationLatitude)
+    || !Number.isFinite(declarationLongitude)
+    || declarationLatitude < -90
+    || declarationLatitude > 90
+    || declarationLongitude < -180
+    || declarationLongitude > 180) {
+    return false;
+  }
+
+  const distanceMeters = haversineDistanceKm(
+    latitude,
+    longitude,
+    declarationLatitude,
+    declarationLongitude
+  ) * 1000;
+
+  return distanceMeters <= radiusMeters;
+};

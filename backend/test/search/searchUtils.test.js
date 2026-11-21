@@ -9,7 +9,10 @@ import {
   tokenizeQuery,
   escapeRegex,
   buildKeywordRegex,
-  textMatchesKeywords
+  textMatchesKeywords,
+  calculateRelevanceScore,
+  haversineDistanceKm,
+  isWithinRadius
 } from '../../src/utils/search/searchUtils.js';
 
 // 2. Text Utility Tests
@@ -49,4 +52,53 @@ test('textMatchesKeywords matches all tokens', () => {
   assert.equal(textMatchesKeywords('Téléphone iPhone noir', 'iphone noir'), true);
   assert.equal(textMatchesKeywords('Téléphone iPhone noir', 'samsung noir'), false);
   assert.equal(textMatchesKeywords('', ''), true);
+});
+
+// 3. Relevance and Distance Tests
+test('relevance ranks title matches above description-only matches', () => {
+  const titleMatch = { titre: 'Sac Samsung', description: 'Objet', detailsObjet: {}, lieu: {} };
+  const descriptionMatch = { titre: 'Objet', description: 'Sac Samsung', detailsObjet: {}, lieu: {} };
+  assert.ok(calculateRelevanceScore(titleMatch, 'sac samsung') >
+    calculateRelevanceScore(descriptionMatch, 'sac samsung'));
+});
+
+test('relevance considers multiple tokens and object or location fields', () => {
+  const objectMatch = {
+    titre: 'Objet',
+    description: 'Objet',
+    detailsObjet: { marque: 'Samsung', couleur: 'rouge' },
+    lieu: { nomLieu: 'B12', zone: 'Bloc A' }
+  };
+  assert.equal(calculateRelevanceScore(objectMatch, 'samsung rouge'), 60);
+  assert.ok(calculateRelevanceScore(objectMatch, 'b12') > 0);
+  assert.ok(calculateRelevanceScore(objectMatch, 'samsung rouge') >
+    calculateRelevanceScore(objectMatch, 'samsung'));
+});
+
+test('relevance matching remains accent-insensitive', () => {
+  assert.ok(calculateRelevanceScore({
+    titre: 'Éléphant',
+    description: '',
+    detailsObjet: {},
+    lieu: {}
+  }, 'elephant') > 0);
+});
+
+test('haversine distance calculates nearest coordinates', () => {
+  const tunisToTunis = haversineDistanceKm(36.8065, 10.1815, 36.8065, 10.1815);
+  const nearbyDistance = haversineDistanceKm(36.8065, 10.1815, 36.8500, 10.2000);
+  assert.equal(tunisToTunis, 0);
+  assert.ok(nearbyDistance > 0 && nearbyDistance < 10);
+});
+
+test('radius helper includes declarations inside the radius and excludes missing coordinates', () => {
+  const sac = { lieu: { latitude: 36.8066, longitude: 10.1816 } };
+  const trousse = { lieu: { latitude: 36.8100, longitude: 10.1850 } };
+  const portefeuille = { lieu: { latitude: 36.82, longitude: 10.19 } };
+  const missing = { lieu: { latitude: null, longitude: null } };
+
+  assert.equal(isWithinRadius(sac, 36.8065, 10.1815, 500), true);
+  assert.equal(isWithinRadius(trousse, 36.8065, 10.1815, 500), true);
+  assert.equal(isWithinRadius(portefeuille, 36.8065, 10.1815, 500), false);
+  assert.equal(isWithinRadius(missing, 36.8065, 10.1815, 500), false);
 });

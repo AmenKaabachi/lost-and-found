@@ -119,8 +119,8 @@ test('Declaration search builds ACTIVE, deletion and archive filters', async (t)
   }
 
   assert.equal(capturedSelect.declarantId, 0);
-  assert.equal(capturedSelect['lieu.latitude'], 0);
-  assert.equal(capturedSelect['lieu.longitude'], 0);
+  assert.equal(Object.prototype.hasOwnProperty.call(capturedSelect, 'lieu.latitude'), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(capturedSelect, 'lieu.longitude'), false);
   assert.equal(capturedSelect['lieu.description'], 0);
   assert.equal(capturedSelect['detailsObjet.numeroSerie'], 0);
 
@@ -144,4 +144,178 @@ test('Declaration search builds ACTIVE, deletion and archive filters', async (t)
     $gte: new Date('2026-01-01T00:00:00.000Z'),
     $lte: new Date('2026-01-31T23:59:59.999Z')
   });
+});
+
+// 3. Sorting Tests
+test('Declaration search applies date, relevance and distance sorting', async (t) => {
+  const originalFind = Declaration.find;
+  const originalCountDocuments = Declaration.countDocuments;
+
+  const records = [
+    {
+      _id: '000000000000000000000001',
+      type: 'PERDU',
+      titre: 'Portefeuille vert perdu',
+      description: 'Portefeuille vert',
+      detailsObjet: { marque: null, modele: null, couleur: 'vert', signesDistinctifs: null },
+      lieu: { nomLieu: 'Bibliotheque', zone: 'Bloc C', latitude: 36.82, longitude: 10.19 },
+      dateEvenement: new Date('2026-11-10T12:00:00.000Z'),
+      statut: 'ACTIVE',
+      isDeleted: false,
+      archivedAt: null,
+      photos: []
+    },
+    {
+      _id: '000000000000000000000002',
+      type: 'TROUVE',
+      titre: 'Trousse bleue trouvee',
+      description: 'Trousse bleue',
+      detailsObjet: { marque: null, modele: null, couleur: 'bleu', signesDistinctifs: null },
+      lieu: { nomLieu: 'Salle B12', zone: 'Bloc B', latitude: 36.8100, longitude: 10.1850 },
+      dateEvenement: new Date('2026-11-10T12:00:00.000Z'),
+      statut: 'ACTIVE',
+      isDeleted: false,
+      archivedAt: null,
+      photos: []
+    },
+    {
+      _id: '000000000000000000000003',
+      type: 'PERDU',
+      titre: 'Test moderation',
+      description: 'Sans coordonnées',
+      detailsObjet: { marque: null, modele: null, couleur: null, signesDistinctifs: null },
+      lieu: { nomLieu: 'Test', zone: 'Test', latitude: null, longitude: null },
+      dateEvenement: new Date('2026-11-01T12:00:00.000Z'),
+      statut: 'ACTIVE',
+      isDeleted: false,
+      archivedAt: null,
+      photos: []
+    },
+    {
+      _id: '000000000000000000000004',
+      type: 'TROUVE',
+      titre: 'Sac rouge trouve',
+      description: 'Sac rouge',
+      detailsObjet: { marque: 'Samsung', modele: null, couleur: 'rouge', signesDistinctifs: null },
+      lieu: { nomLieu: 'Salle B12', zone: 'Bloc A', latitude: 36.8066, longitude: 10.1816 },
+      dateEvenement: new Date('2026-11-10T12:00:00.000Z'),
+      statut: 'ACTIVE',
+      isDeleted: false,
+      archivedAt: null,
+      photos: []
+    }
+  ];
+
+  let capturedSort;
+  let capturedSkip;
+  let capturedLimit;
+
+  Declaration.countDocuments = async () => records.length;
+  Declaration.find = () => {
+    capturedSkip = 0;
+    capturedLimit = null;
+    const chain = {
+      sort(value) { capturedSort = value; return this; },
+      skip(value) { capturedSkip = value; return this; },
+      limit(value) { capturedLimit = value; return this; },
+      select() { return this; },
+      populate() { return this; },
+      lean: async () => {
+        const limit = capturedLimit ?? records.length;
+        const matched = [...records];
+        if (capturedSort?.dateEvenement) {
+          matched.sort((first, second) =>
+            new Date(second.dateEvenement).getTime() - new Date(first.dateEvenement).getTime()
+            || String(second._id).localeCompare(String(first._id))
+          );
+        }
+        return matched.slice(capturedSkip ?? 0, (capturedSkip ?? 0) + limit);
+      }
+    };
+    return chain;
+  };
+
+  t.after(() => {
+    Declaration.find = originalFind;
+    Declaration.countDocuments = originalCountDocuments;
+  });
+
+  const defaults = await searchDeclarations({ page: 1, limit: 2 });
+  assert.deepEqual(capturedSort, { dateEvenement: -1, _id: -1 });
+  assert.equal(capturedSkip, 0);
+  assert.equal(capturedLimit, 2);
+  assert.equal(defaults.declarations.length, 2);
+
+  const relevance = await searchDeclarations({
+    q: 'sac samsung',
+    sort: 'pertinence',
+    page: 1,
+    limit: 2
+  });
+  assert.equal(relevance.declarations[0].titre, 'Sac rouge trouve');
+  assert.equal(relevance.declarations[0].detailsObjet.marque, 'Samsung');
+
+  const relevanceFallback = await searchDeclarations({
+    sort: 'pertinence',
+    page: 2,
+    limit: 1
+  });
+  assert.equal(relevanceFallback.declarations.length, 1);
+  assert.equal(relevanceFallback.pagination.currentPage, 2);
+
+  const distance = await searchDeclarations({
+    sort: 'distance',
+    lat: 36.8065,
+    lng: 10.1815,
+    page: 1,
+    limit: 10
+  });
+  assert.deepEqual(
+    distance.declarations.map((declaration) => declaration.titre),
+    [
+      'Sac rouge trouve',
+      'Trousse bleue trouvee',
+      'Portefeuille vert perdu',
+      'Test moderation'
+    ]
+  );
+
+  const distancePage1 = await searchDeclarations({
+    sort: 'distance',
+    lat: 36.8065,
+    lng: 10.1815,
+    page: 1,
+    limit: 2
+  });
+  const distancePage2 = await searchDeclarations({
+    sort: 'distance',
+    lat: 36.8065,
+    lng: 10.1815,
+    page: 2,
+    limit: 2
+  });
+  const page1Ids = new Set(distancePage1.declarations.map((declaration) => declaration._id));
+  assert.equal(
+    distancePage2.declarations.some((declaration) => page1Ids.has(declaration._id)),
+    false
+  );
+
+  const radius = await searchDeclarations({
+    lat: 36.8065,
+    lng: 10.1815,
+    radius: 500,
+    page: 1,
+    limit: 10
+  });
+  assert.deepEqual(
+    radius.declarations.map((declaration) => declaration.titre),
+    [
+      'Sac rouge trouve',
+      'Trousse bleue trouvee'
+    ]
+  );
+  assert.equal(radius.pagination.totalResults, 2);
+  assert.equal(radius.pagination.totalPages, 1);
+  assert.equal(radius.pagination.hasNextPage, false);
+  assert.equal(radius.pagination.hasPreviousPage, false);
 });

@@ -84,7 +84,18 @@ test('Search route authentication, validation and controller flow', async (t) =>
     ['?q=', 400],
     ['?q=%20%20%20', 400],
     [`?q=${'a'.repeat(101)}`, 400],
-    ['?q=a&q=b', 400]
+    ['?q=a&q=b', 400],
+    ['?sort=distance', 400],
+    ['?sort=distance&lat=abc&lng=10', 400],
+    ['?sort=distance&lat=91&lng=10', 400],
+    ['?sort=distance&lat=36&lng=181', 400],
+    ['?sort=unsupported', 400],
+    ['?lat=36.8065&lng=10.1815&radius=0', 400],
+    ['?lat=36.8065&lng=10.1815&radius=-1', 400],
+    ['?lat=36.8065&lng=10.1815&radius=2001', 400],
+    ['?radius=500', 400],
+    ['?lat=36.8065&radius=500', 400],
+    ['?lng=10.1815&radius=500', 400]
   ]) {
     const response = await fetch(`${baseUrl}/api/search/declarations${suffix}`, { headers });
     assert.equal(response.status, status);

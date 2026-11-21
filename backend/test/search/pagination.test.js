@@ -31,7 +31,9 @@ const declarations = Array.from({ length: 12 }, (_, index) => {
     },
     lieu: {
       nomLieu: index % 2 === 0 ? 'B12' : 'Bloc C',
-      zone: index % 2 === 0 ? 'Bloc A' : 'Bloc B'
+      zone: index % 2 === 0 ? 'Bloc A' : 'Bloc B',
+      latitude: index === 11 ? null : 36.8 + (index * 0.001),
+      longitude: index === 11 ? null : 10.17 + (index * 0.001)
     },
     dateEvenement: new Date(`2026-11-${String(index + 1).padStart(2, '0')}T12:00:00.000Z`),
     photos: [],
@@ -126,16 +128,21 @@ test('Advanced search pagination is deterministic and validated', async (t) => {
     findFilterCount++;
     let skipCount = 0;
     let limitCount = null;
+    let sortOptions = null;
     const chain = {
-      sort() { return this; },
+      sort(value) { sortOptions = value; return this; },
       skip(value) { skipCount = value; return this; },
       limit(value) { limitCount = value; return this; },
       select() { return this; },
       populate() { return this; },
       lean: async () => {
         const matched = declarations
-          .filter((item) => matchesFilter(filter, item))
-          .sort((a, b) => b.createdAt - a.createdAt || String(b._id).localeCompare(String(a._id)));
+          .filter((item) => matchesFilter(filter, item));
+        if (sortOptions?.dateEvenement) {
+          matched.sort((a, b) => b.dateEvenement - a.dateEvenement || String(b._id).localeCompare(String(a._id)));
+        } else {
+          matched.sort((a, b) => b.createdAt - a.createdAt || String(b._id).localeCompare(String(a._id)));
+        }
         return matched.slice(skipCount, limitCount === null ? undefined : skipCount + limitCount);
       }
     };
@@ -239,6 +246,9 @@ test('Advanced search pagination is deterministic and validated', async (t) => {
 
   const filters = [
     '?q=sac&page=1&limit=5',
+    '?sort=date&page=2&limit=5',
+    '?q=sac&sort=pertinence&page=1&limit=5',
+    '?sort=distance&lat=36.8065&lng=10.1815&page=1&limit=5',
     '?type=TROUVE&page=1&limit=5',
     '?categorie=6afccf3d3a2a8ff5920f30a3&page=1&limit=5',
     '?couleur=rouge&page=1&limit=5',

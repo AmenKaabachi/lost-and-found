@@ -29,6 +29,21 @@ const dateQuery = z.union([
   message: 'Date ISO invalide'
 });
 
+const latitudeQuery = z.string()
+  .regex(/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/, 'Latitude invalide')
+  .transform(Number)
+  .pipe(z.number().finite().min(-90).max(90));
+
+const longitudeQuery = z.string()
+  .regex(/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/, 'Longitude invalide')
+  .transform(Number)
+  .pipe(z.number().finite().min(-180).max(180));
+
+const radiusQuery = z.string()
+  .regex(/^(?:\d+(?:\.\d*)?|\.\d+)$/, 'Radius invalide')
+  .transform(Number)
+  .pipe(z.number().finite().positive().max(2000));
+
 const declarationSearchQuerySchema = z.object({
   q: z.string().trim().min(1).max(100).optional(),
   type: z.enum(Object.values(TypeDeclaration)).optional(),
@@ -41,6 +56,10 @@ const declarationSearchQuerySchema = z.object({
   zoneCampus: z.string().trim().min(1).max(100).optional(),
   dateDebut: dateQuery.optional(),
   dateFin: dateQuery.optional(),
+  sort: z.enum(['date', 'pertinence', 'distance']).optional().default('date'),
+  lat: latitudeQuery.optional(),
+  lng: longitudeQuery.optional(),
+  radius: radiusQuery.optional(),
   page: z.string().regex(/^\d+$/, 'page doit être un entier positif')
     .transform(Number)
     .pipe(z.number().int().positive().safe())
@@ -61,6 +80,69 @@ const declarationSearchQuerySchema = z.object({
       message: 'dateFin doit être postérieure ou égale à dateDebut'
     });
   }
+  if (query.sort === 'distance') {
+    if (query.lat === undefined) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['lat'],
+        message: 'lat est obligatoire pour le tri par distance'
+      });
+    }
+    if (query.lng === undefined) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['lng'],
+        message: 'lng est obligatoire pour le tri par distance'
+      });
+    }
+  }
+  if (query.radius !== undefined) {
+    if (query.lat === undefined) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['lat'],
+        message: 'lat est obligatoire pour le filtre radius'
+      });
+    }
+    if (query.lng === undefined) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['lng'],
+        message: 'lng est obligatoire pour le filtre radius'
+      });
+    }
+  }
+});
+
+const mapSearchQuerySchema = z.object({
+  minLat: latitudeQuery,
+  maxLat: latitudeQuery,
+  minLng: longitudeQuery,
+  maxLng: longitudeQuery,
+  type: z.enum(Object.values(TypeDeclaration)).optional(),
+  categorie: z.string().refine((value) => mongoose.Types.ObjectId.isValid(value), {
+    message: 'Identifiant de catégorie invalide'
+  }).optional(),
+  limit: z.string().regex(/^\d+$/, 'limit doit être un entier positif')
+    .transform(Number)
+    .pipe(z.number().int().positive().max(100).safe())
+    .optional()
+    .default('100')
+}).superRefine((query, context) => {
+  if (query.minLat >= query.maxLat) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['maxLat'],
+      message: 'maxLat doit être supérieur à minLat'
+    });
+  }
+  if (query.minLng >= query.maxLng) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['maxLng'],
+      message: 'maxLng doit être supérieur à minLng'
+    });
+  }
 });
 
 // 4. Middleware
@@ -71,6 +153,11 @@ router.get(
   '/declarations',
   validateRequest(declarationSearchQuerySchema, 'query'),
   declarationSearchController.searchDeclarations
+);
+router.get(
+  '/map',
+  validateRequest(mapSearchQuerySchema, 'query'),
+  declarationSearchController.searchMap
 );
 
 // 6. Exports

@@ -6,6 +6,7 @@ import jwt from 'jsonwebtoken';
 import searchRoutes from '../../src/routes/search/searchRoutes.js';
 import Utilisateur from '../../src/models/Utilisateur.js';
 import Declaration from '../../src/models/Declaration.js';
+import Categorie from '../../src/models/Categorie.js';
 import { errorHandler } from '../../src/errors/core/errorHandler.js';
 
 // 2. Test Setup
@@ -132,4 +133,153 @@ test('Search route authentication, validation and controller flow', async (t) =>
   assert.equal(noMatchesBody.success, true);
   assert.deepEqual(noMatchesBody.data, []);
   assert.equal(noMatchesBody.message, 'No declarations match your search');
+});
+
+
+// 4. Suggestions Tests
+test('Suggestions route requires authentication and validates query parameters', async (t) => {
+  process.env.JWT_SECRET = 'search-test-secret';
+
+  const originalFindById = Utilisateur.findById;
+  const originalDeclarationFind = Declaration.find;
+  const originalCategorieFind = Categorie.find;
+
+  Utilisateur.findById = async () => ({
+    _id: '507f1f77bcf86cd799439011',
+    statut: 'ACTIF',
+    emailVerifie: true,
+    role: 'MEMBRE'
+  });
+
+  const app = express();
+  app.use(express.json());
+  app.use((req, _res, next) => {
+    req.locale = 'en';
+    next();
+  });
+  app.use('/api/search', searchRoutes);
+  app.use(errorHandler);
+
+  const server = await listen(app);
+  const baseUrl = `http://127.0.0.1:${server.address().port}`;
+
+  t.after(async () => {
+    await new Promise((resolve) => server.close(resolve));
+    Utilisateur.findById = originalFindById;
+    Declaration.find = originalDeclarationFind;
+    Categorie.find = originalCategorieFind;
+  });
+
+  const noAuth = await fetch(`${baseUrl}/api/search/suggestions?q=wal`);
+  assert.equal(noAuth.status, 401);
+
+  const token = jwt.sign({ id: '507f1f77bcf86cd799439011' }, process.env.JWT_SECRET);
+  const headers = { Authorization: `Bearer ${token}` };
+
+  for (const suffix of [
+    '',
+    '?q=',
+    '?q=a',
+    '?q=%20a%20',
+    `?q=${'a'.repeat(101)}`,
+    '?q=ab&q=cd',
+    '?q=ab&limit=0',
+    '?q=ab&limit=11',
+    '?q=ab&limit=abc',
+    '?q=ab&limit=-1'
+  ]) {
+    const response = await fetch(`${baseUrl}/api/search/suggestions${suffix}`, { headers });
+    assert.equal(response.status, 400, suffix);
+    const body = await response.json();
+    assert.equal(body.success, false);
+    assert.equal(body.error.code, 'VALIDATION_ERROR');
+  }
+});
+
+test('Suggestions return distinct eligible suggestions within the limit', async (t) => {
+  process.env.JWT_SECRET = 'search-test-secret';
+
+  const originalFindById = Utilisateur.findById;
+  const originalDeclarationFind = Declaration.find;
+  const originalCategorieFind = Categorie.find;
+  let declarationFilter;
+
+  const chain = (result) => ({
+    sort() { return this; },
+    limit() { return this; },
+    select() { return this; },
+    lean: async () => result
+  });
+  let categories = [{ _id: 'c1', nom: 'Wallet' }];
+  let declarations = [
+    { _id: 'd1', titre: 'Green wallet' },
+    { _id: 'd2', titre: 'Wallet black' },
+    { _id: 'd3', titre: 'wallet black' }
+  ];
+
+  Utilisateur.findById = async () => ({
+    _id: '507f1f77bcf86cd799439011',
+    statut: 'ACTIF',
+    emailVerifie: true,
+    role: 'MEMBRE'
+  });
+  Categorie.find = () => chain(categories);
+  Declaration.find = (filter) => {
+    declarationFilter = filter;
+    return chain(declarations);
+  };
+
+  const app = express();
+  app.use(express.json());
+  app.use((req, _res, next) => {
+    req.locale = 'en';
+    next();
+  });
+  app.use('/api/search', searchRoutes);
+  app.use(errorHandler);
+
+  const server = await listen(app);
+  const baseUrl = `http://127.0.0.1:${server.address().port}`;
+
+  t.after(async () => {
+    await new Promise((resolve) => server.close(resolve));
+    Utilisateur.findById = originalFindById;
+    Declaration.find = originalDeclarationFind;
+    Categorie.find = originalCategorieFind;
+  });
+
+  const token = jwt.sign({ id: '507f1f77bcf86cd799439011' }, process.env.JWT_SECRET);
+  const headers = { Authorization: `Bearer ${token}` };
+
+  const response = await fetch(`${baseUrl}/api/search/suggestions?q=wal&limit=5`, { headers });
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.success, true);
+  assert.deepEqual(body.data, [
+    { type: 'categorie', valeur: 'Wallet' },
+    { type: 'titre', valeur: 'Wallet black' },
+    { type: 'titre', valeur: 'Green wallet' }
+  ]);
+
+  assert.equal(declarationFilter.statut, 'ACTIVE');
+  assert.equal(declarationFilter.isDeleted, false);
+  assert.equal(declarationFilter.archivedAt, null);
+
+  await fetch(`${baseUrl}/api/search/suggestions?q=etui`, { headers });
+  assert.ok(declarationFilter.titre.test('Étui rouge'));
+
+  const limited = await fetch(`${baseUrl}/api/search/suggestions?q=wal&limit=2`, { headers });
+  assert.equal((await limited.json()).data.length, 2);
+
+  categories = [];
+  declarations = Array.from({ length: 12 }, (_, index) => ({ _id: `d${index}`, titre: `Wallet ${index}` }));
+  const defaultLimit = await fetch(`${baseUrl}/api/search/suggestions?q=wal`, { headers });
+  assert.equal((await defaultLimit.json()).data.length, 10);
+
+  declarations = [];
+  const empty = await fetch(`${baseUrl}/api/search/suggestions?q=nothing`, { headers });
+  assert.equal(empty.status, 200);
+  const emptyBody = await empty.json();
+  assert.equal(emptyBody.success, true);
+  assert.deepEqual(emptyBody.data, []);
 });

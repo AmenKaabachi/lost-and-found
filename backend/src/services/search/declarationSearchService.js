@@ -1,5 +1,6 @@
 // 1. Imports
 import Declaration from '../../models/Declaration.js';
+import Categorie from '../../models/Categorie.js';
 import { StatutDeclaration } from '../../models/enums.js';
 import {
   buildKeywordRegex,
@@ -7,6 +8,7 @@ import {
   calculateRelevanceScore,
   haversineDistanceKm,
   isWithinRadius,
+  normalizeText,
   tokenizeQuery
 } from '../../utils/search/searchUtils.js';
 
@@ -437,4 +439,51 @@ export const searchDeclarationsOnMap = async (query = {}) => {
     .lean();
 
   return declarations.map(toMapDeclaration);
+};
+ 
+
+// 9. Suggestions
+const SUGGESTION_CANDIDATES_LIMIT = 50;
+
+export const searchSuggestions = async ({ q, limit = 10 }) => {
+  const matcher = buildKeywordRegex(q);
+  const normalizedQuery = normalizeText(q);
+
+  const [categories, declarations] = await Promise.all([
+    Categorie.find({ active: true, nom: matcher })
+      .sort({ nom: 1 })
+      .limit(limit)
+      .select({ nom: 1 })
+      .lean(),
+    Declaration.find({
+      statut: StatutDeclaration.ACTIVE,
+      isDeleted: false,
+      archivedAt: null,
+      titre: matcher
+    })
+      .sort({ dateEvenement: -1, _id: -1 })
+      .limit(SUGGESTION_CANDIDATES_LIMIT)
+      .select({ titre: 1 })
+      .lean()
+  ]);
+
+  const seenTitles = new Set();
+  const titles = [];
+
+  for (const { titre } of declarations) {
+    const title = String(titre ?? '').trim();
+    const key = normalizeText(title);
+
+    if (!key || seenTitles.has(key)) continue;
+    seenTitles.add(key);
+    titles.push(title);
+  }
+
+  const startsWithQuery = (title) => normalizeText(title).startsWith(normalizedQuery);
+  titles.sort((first, second) => Number(startsWithQuery(second)) - Number(startsWithQuery(first)));
+
+  return [
+    ...categories.map((categorie) => ({ type: 'categorie', valeur: categorie.nom })),
+    ...titles.map((title) => ({ type: 'titre', valeur: title }))
+  ].slice(0, limit);
 };

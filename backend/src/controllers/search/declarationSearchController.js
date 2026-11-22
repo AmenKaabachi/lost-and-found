@@ -4,8 +4,9 @@ import { asyncHandler } from '../../errors/middleware/asyncHandler.js';
 import { translations } from '../../errors/localization/translation.js';
 import {
   searchDeclarations as searchDeclarationsService,
-  searchDeclarationsOnMap as searchDeclarationsOnMapService
-} from '../../services/search/declarationSearchService.js';
+  searchDeclarationsOnMap as searchDeclarationsOnMapService,
+  searchSuggestions as searchSuggestionsService
+} from '../../services/search/declarationSearchService.js'; '../../services/search/declarationSearchService.js';
 
 // 2. Controller Functions
 export const searchDeclarations = asyncHandler(async (req, res) => {
@@ -30,4 +31,11 @@ export const searchMap = asyncHandler(async (req, res) => {
     : m.noMapDeclarationsFound;
 
   sendSuccess(res, declarations, message, 200);
+});
+
+export const getSuggestions = asyncHandler(async (req, res) => {
+  const suggestions = await searchSuggestionsService(req.query);
+
+  // 3. Response Handling
+  sendSuccess(res, suggestions);
 });

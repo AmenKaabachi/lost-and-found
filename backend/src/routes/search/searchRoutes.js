@@ -145,6 +145,16 @@ const mapSearchQuerySchema = z.object({
   }
 });
 
+const suggestionsQuerySchema = z.object({
+  q: z.string().trim().min(2).max(100),
+  limit: z.string().regex(/^\d+$/, 'limit doit être un entier positif')
+    .transform(Number)
+    .pipe(z.number().int().positive().max(10).safe())
+    .optional()
+    .default('10')
+});
+
+
 // 4. Middleware
 router.use(authMiddleware);
 
@@ -158,6 +168,12 @@ router.get(
   '/map',
   validateRequest(mapSearchQuerySchema, 'query'),
   declarationSearchController.searchMap
+);
+
+router.get(
+  '/suggestions',
+  validateRequest(suggestionsQuerySchema, 'query'),
+  declarationSearchController.getSuggestions
 );
 
 // 6. Exports

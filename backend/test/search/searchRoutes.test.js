@@ -446,3 +446,162 @@ test('Recent returns the latest eligible declarations without private data', asy
   assert.deepEqual(emptyBody.data, []);
   assert.equal(emptyBody.message, 'No declarations match your search');
 });
+
+
+// 6. Search Filters Tests
+test('Filters route requires authentication and validates query parameters', async (t) => {
+  process.env.JWT_SECRET = 'search-test-secret';
+
+  const originalFindById = Utilisateur.findById;
+  const originalAggregate = Declaration.aggregate;
+  const originalCategorieFind = Categorie.find;
+
+  Utilisateur.findById = async () => ({
+    _id: '507f1f77bcf86cd799439011',
+    statut: 'ACTIF',
+    emailVerifie: true,
+    role: 'MEMBRE'
+  });
+  Declaration.aggregate = async () => [{ categories: [], couleurs: [], zones: [], lieux: [] }];
+  Categorie.find = () => ({
+    sort() { return this; },
+    select() { return this; },
+    lean: async () => []
+  });
+
+  const app = express();
+  app.use(express.json());
+  app.use((req, _res, next) => {
+    req.locale = 'en';
+    next();
+  });
+  app.use('/api/search', searchRoutes);
+  app.use(errorHandler);
+
+  const server = await listen(app);
+  const baseUrl = `http://127.0.0.1:${server.address().port}`;
+
+  t.after(async () => {
+    await new Promise((resolve) => server.close(resolve));
+    Utilisateur.findById = originalFindById;
+    Declaration.aggregate = originalAggregate;
+    Categorie.find = originalCategorieFind;
+  });
+
+  const noAuth = await fetch(`${baseUrl}/api/search/filters`);
+  assert.equal(noAuth.status, 401);
+
+  const token = jwt.sign({ id: '507f1f77bcf86cd799439011' }, process.env.JWT_SECRET);
+  const headers = { Authorization: `Bearer ${token}` };
+
+  for (const suffix of ['?type=XYZ', '?type=perdu', '?type=PERDU&type=TROUVE']) {
+    const response = await fetch(`${baseUrl}/api/search/filters${suffix}`, { headers });
+    assert.equal(response.status, 400, suffix);
+    const body = await response.json();
+    assert.equal(body.success, false);
+    assert.equal(body.error.code, 'VALIDATION_ERROR');
+  }
+
+  for (const suffix of ['', '?type=PERDU', '?type=TROUVE']) {
+    const response = await fetch(`${baseUrl}/api/search/filters${suffix}`, { headers });
+    assert.equal(response.status, 200, suffix);
+  }
+});
+
+test('Filters return categories and deduplicated values with counts', async (t) => {
+  process.env.JWT_SECRET = 'search-test-secret';
+
+  const originalFindById = Utilisateur.findById;
+  const originalAggregate = Declaration.aggregate;
+  const originalCategorieFind = Categorie.find;
+  let pipeline;
+  let facets = {
+    categories: [{ _id: 'c1', total: 4 }],
+    couleurs: [
+      { _id: 'vert', valeur: 'Vert', total: 2 },
+      { _id: 'rouge', valeur: 'Rouge', total: 1 }
+    ],
+    zones: [{ _id: 'bloc c', valeur: 'Bloc C', total: 3 }],
+    lieux: [
+      { _id: 'bibliotheque', valeur: 'Bibliotheque', total: 1 },
+      { _id: 'bibliothèque', valeur: 'Bibliothèque', total: 1 },
+      { _id: 'salle b12', valeur: 'Salle B12', total: 1 }
+    ]
+  };
+
+  Utilisateur.findById = async () => ({
+    _id: '507f1f77bcf86cd799439011',
+    statut: 'ACTIF',
+    emailVerifie: true,
+    role: 'MEMBRE'
+  });
+  Declaration.aggregate = async (receivedPipeline) => {
+    pipeline = receivedPipeline;
+    return [facets];
+  };
+  Categorie.find = () => ({
+    sort() { return this; },
+    select() { return this; },
+    lean: async () => [
+      { _id: 'c1', nom: 'Autres' },
+      { _id: 'c2', nom: 'Clés' }
+    ]
+  });
+
+  const app = express();
+  app.use(express.json());
+  app.use((req, _res, next) => {
+    req.locale = 'en';
+    next();
+  });
+  app.use('/api/search', searchRoutes);
+  app.use(errorHandler);
+
+  const server = await listen(app);
+  const baseUrl = `http://127.0.0.1:${server.address().port}`;
+
+  t.after(async () => {
+    await new Promise((resolve) => server.close(resolve));
+    Utilisateur.findById = originalFindById;
+    Declaration.aggregate = originalAggregate;
+    Categorie.find = originalCategorieFind;
+  });
+
+  const token = jwt.sign({ id: '507f1f77bcf86cd799439011' }, process.env.JWT_SECRET);
+  const headers = { Authorization: `Bearer ${token}` };
+
+  const response = await fetch(`${baseUrl}/api/search/filters`, { headers });
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.success, true);
+  assert.deepEqual(body.data.categories, [
+    { _id: 'c1', nom: 'Autres', total: 4 },
+    { _id: 'c2', nom: 'Clés', total: 0 }
+  ]);
+  assert.deepEqual(body.data.couleurs, [
+    { valeur: 'Vert', total: 2 },
+    { valeur: 'Rouge', total: 1 }
+  ]);
+  assert.deepEqual(body.data.zones, [{ valeur: 'Bloc C', total: 3 }]);
+  assert.deepEqual(body.data.lieux, [
+    { valeur: 'Bibliotheque', total: 2 },
+    { valeur: 'Salle B12', total: 1 }
+  ]);
+
+  assert.equal(pipeline[0].$match.statut, 'ACTIVE');
+  assert.equal(pipeline[0].$match.isDeleted, false);
+  assert.equal(pipeline[0].$match.archivedAt, null);
+  assert.equal(pipeline[0].$match.type, undefined);
+
+  await fetch(`${baseUrl}/api/search/filters?type=TROUVE`, { headers });
+  assert.equal(pipeline[0].$match.type, 'TROUVE');
+
+  facets = { categories: [], couleurs: [], zones: [], lieux: [] };
+  const empty = await fetch(`${baseUrl}/api/search/filters`, { headers });
+  assert.equal(empty.status, 200);
+  const emptyBody = await empty.json();
+  assert.deepEqual(emptyBody.data.couleurs, []);
+  assert.deepEqual(emptyBody.data.zones, []);
+  assert.deepEqual(emptyBody.data.lieux, []);
+  assert.equal(emptyBody.data.categories.length, 2);
+});

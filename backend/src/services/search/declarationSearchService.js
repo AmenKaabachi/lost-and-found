@@ -503,3 +503,73 @@ export const getRecentDeclarations = async ({ type, limit = 10 } = {}) => {
 
   return declarations.map(toPublicDeclaration);
 };
+
+
+// 11. Search Filters
+const buildValueFacet = (field) => [
+  { $match: { [field]: { $type: 'string' } } },
+  { $project: { value: { $trim: { input: `$${field}` } } } },
+  { $match: { value: { $ne: '' } } },
+  {
+    $group: {
+      _id: { $toLower: '$value' },
+      valeur: { $first: '$value' },
+      total: { $sum: 1 }
+    }
+  },
+  { $sort: { total: -1, _id: 1 } }
+];
+
+const mergeValueGroups = (groups = []) => {
+  const merged = new Map();
+
+  for (const { valeur, total } of groups) {
+    const key = normalizeText(valeur);
+
+    if (!key) continue;
+
+    const existing = merged.get(key);
+
+    if (existing) existing.total += total;
+    else merged.set(key, { valeur, total });
+  }
+
+  return [...merged.values()].sort(
+    (first, second) => second.total - first.total || first.valeur.localeCompare(second.valeur)
+  );
+};
+
+export const getSearchFilters = async ({ type } = {}) => {
+  const [[facets = {}], categories] = await Promise.all([
+    Declaration.aggregate([
+      { $match: buildMongoFilter({ type }) },
+      {
+        $facet: {
+          categories: [
+            { $match: { categorieId: { $ne: null } } },
+            { $group: { _id: '$categorieId', total: { $sum: 1 } } }
+          ],
+          couleurs: buildValueFacet('detailsObjet.couleur'),
+          zones: buildValueFacet('lieu.zone'),
+          lieux: buildValueFacet('lieu.nomLieu')
+        }
+      }
+    ]),
+    Categorie.find({ active: true }).sort({ nom: 1 }).select({ nom: 1 }).lean()
+  ]);
+
+  const totalsByCategory = new Map(
+    (facets.categories || []).map(({ _id, total }) => [String(_id), total])
+  );
+
+  return {
+    categories: categories.map(({ _id, nom }) => ({
+      _id,
+      nom,
+      total: totalsByCategory.get(String(_id)) ?? 0
+    })),
+    couleurs: mergeValueGroups(facets.couleurs),
+    zones: mergeValueGroups(facets.zones),
+    lieux: mergeValueGroups(facets.lieux)
+  };
+};

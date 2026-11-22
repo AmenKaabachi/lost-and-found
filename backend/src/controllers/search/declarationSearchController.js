@@ -6,7 +6,8 @@ import {
   searchDeclarations as searchDeclarationsService,
   searchDeclarationsOnMap as searchDeclarationsOnMapService,
   searchSuggestions as searchSuggestionsService,
-  getRecentDeclarations as getRecentDeclarationsService
+  getRecentDeclarations as getRecentDeclarationsService,
+  getSearchFilters as getSearchFiltersService
 } from '../../services/search/declarationSearchService.js';
 
 // 2. Controller Functions
@@ -53,4 +54,12 @@ export const getRecentDeclarations = asyncHandler(async (req, res) => {
     : m.noDeclarationsFound;
 
   sendSuccess(res, declarations, message, 200);
+});
+
+
+export const getSearchFilters = asyncHandler(async (req, res) => {
+  const filters = await getSearchFiltersService(req.query);
+
+  // 3. Response Handling
+  sendSuccess(res, filters);
 });

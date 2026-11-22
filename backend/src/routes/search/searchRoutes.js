@@ -163,6 +163,9 @@ const recentQuerySchema = z.object({
     .default('10')
 });
 
+const filtersQuerySchema = z.object({
+  type: z.enum(Object.values(TypeDeclaration)).optional()
+});
 
 // 4. Middleware
 router.use(authMiddleware);
@@ -189,6 +192,12 @@ router.get(
   '/recent',
   validateRequest(recentQuerySchema, 'query'),
   declarationSearchController.getRecentDeclarations
+);
+
+router.get(
+  '/filters',
+  validateRequest(filtersQuerySchema, 'query'),
+  declarationSearchController.getSearchFilters
 );
 
 // 6. Exports

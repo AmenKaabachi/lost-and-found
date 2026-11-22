@@ -19,8 +19,6 @@ const logAction = async (acteurId, action, entiteId, details = {}) => {
 };
 
 export const createDeclaration = asyncHandler(async (req, res) => {
-  const photos = req.files ? req.files.map(f => f.path) : [];
-
   const categorieName = (req.body.categorie || '').trim();
   if (!categorieName) throw new AppError(400, ERROR_CODES.VALIDATION_ERROR, 'Catégorie requise');
 
@@ -48,7 +46,6 @@ export const createDeclaration = asyncHandler(async (req, res) => {
       couleur: req.body.couleur || null,
       marque: req.body.marque || null
     },
-    photos,
     contactVisible: req.body.contactVisible === 'true' || req.body.contactVisible === true,
     statut,
     aiModerationReason: req.moderationResult.reason,
@@ -115,7 +112,6 @@ export const updateDeclaration = asyncHandler(async (req, res) => {
   if (req.body.contactVisible !== undefined) {
     declaration.contactVisible = req.body.contactVisible === 'true' || req.body.contactVisible === true;
   }
-  if (req.files && req.files.length > 0) declaration.photos = req.files.map(f => f.path);
 
   if (isOwner && req.moderationResult) {
     const oldStatut = declaration.statut;

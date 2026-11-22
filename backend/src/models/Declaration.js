@@ -26,7 +26,6 @@ const declarationSchema = new mongoose.Schema({
   detailsObjet: { type: itemDetailsSchema, default: () => ({}) },
   lieu: { type: locationInfoSchema, default: () => ({}) },
   dateEvenement: { type: Date, required: true },
-  photos: { type: [String], default: [] },
   statut: { type: String, enum: Object.values(StatutDeclaration), default: StatutDeclaration.ACTIVE },
   statutGarde: { type: String, enum: Object.values(StatutGarde), default: StatutGarde.UNKNOWN },
   archivedAt: { type: Date, default: null },
@@ -34,10 +33,22 @@ const declarationSchema = new mongoose.Schema({
   contactVisible: { type: Boolean, default: true },
   numeroInventaire: { type: String, default: null },
   aiModerationReason: { type: String, default: null },
+  // La modération est exclusivement textuelle : seule 'TEXTE' est générée.
+  // 'IMAGE' est une valeur historique conservée pour la compatibilité des anciennes déclarations.
   aiModerationSource: { type: String, enum: ['TEXTE', 'IMAGE', null], default: null },
   motifRefus: { type: String, default: null },
   isDeleted: { type: Boolean, default: false }
-}, { timestamps: true });
+}, {
+  timestamps: true,
+  toJSON: {
+    // Les anciennes déclarations peuvent encore contenir un champ `photos` en base :
+    // il est conservé mais n'est plus exposé dans les réponses API.
+    transform: (doc, ret) => {
+      delete ret.photos;
+      return ret;
+    }
+  }
+});
 
 declarationSchema.index({ type: 1, statut: 1, categorieId: 1 });
 declarationSchema.index({ 'lieu.zone': 1 });

@@ -168,7 +168,78 @@ describe('AI Moderation Service and Middleware', () => {
     }
   });
 
-  test('Simulates inappropriate photo flagged by Gemini', async () => {
+  test('Sends only text to Gemini (no inlineData), even if req.files is present', async () => {
+    process.env.GEMINI_API_KEY = 'mock-key';
+
+    let sentBody;
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async (_url, options) => {
+      sentBody = JSON.parse(options.body);
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          candidates: [{ content: { parts: [{ text: JSON.stringify({ conforme: true, source: null, motif: null }) }] } }]
+        })
+      };
+    };
+
+    try {
+      const req = {
+        body: {
+          titre: 'Écouteurs blancs',
+          description: 'Trouvés dans l\'amphi A',
+          categorie: 'Électronique',
+          couleur: 'Blanc',
+          marque: 'Apple'
+        },
+        // Fichiers éventuellement présents : ils doivent être ignorés
+        files: [{ path: 'uploads/ancienne_photo.png', mimetype: 'image/png' }]
+      };
+      await aiModeration(req, {}, () => {});
+
+      const parts = sentBody.contents[0].parts;
+      assert.equal(parts.length, 1);
+      assert.ok(parts.every(p => !('inlineData' in p)));
+      const text = parts[0].text;
+      assert.match(text, /Titre : Écouteurs blancs/);
+      assert.match(text, /Catégorie : Électronique/);
+      assert.match(text, /Couleur : Blanc/);
+      assert.match(text, /Marque : Apple/);
+      assert.equal(req.moderationResult.statut, 'ACTIVE');
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test('Prompt contains only text moderation rules (no image criteria)', async () => {
+    process.env.GEMINI_API_KEY = 'mock-key';
+
+    let promptText;
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async (_url, options) => {
+      promptText = JSON.parse(options.body).contents[0].parts[0].text;
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          candidates: [{ content: { parts: [{ text: JSON.stringify({ conforme: true, source: null, motif: null }) }] } }]
+        })
+      };
+    };
+
+    try {
+      await moderateDeclarationContent({ textFields: { titre: 'Carte étudiante', description: 'Trouvée à la bibliothèque' } });
+      assert.match(promptText, /Critères de modération TEXTE/);
+      assert.match(promptText, /insultes/);
+      assert.doesNotMatch(promptText, /IMAGE/);
+      assert.doesNotMatch(promptText, /photo/i);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test('Never produces source IMAGE: a legacy IMAGE answer from Gemini is attributed to TEXTE', async () => {
     process.env.GEMINI_API_KEY = 'mock-key';
 
     const originalFetch = globalThis.fetch;
@@ -176,36 +247,68 @@ describe('AI Moderation Service and Middleware', () => {
       ok: true,
       status: 200,
       json: async () => ({
-        candidates: [
-          {
-            content: {
-              parts: [
-                {
-                  text: JSON.stringify({
-                    conforme: false,
-                    source: 'IMAGE',
-                    motif: 'Image contenant du contenu suggestif ou inapproprié.'
-                  })
-                }
-              ]
-            }
-          }
-        ]
+        candidates: [{ content: { parts: [{ text: JSON.stringify({ conforme: false, source: 'IMAGE', motif: null }) }] } }]
       })
     });
 
     try {
       const result = await moderateDeclarationContent({
-        textFields: {
-          titre: 'Objet quelconque',
-          description: 'Objet trouvé dans le hall'
-        },
-        imageFiles: []
+        textFields: { titre: 'Objet quelconque', description: 'Objet trouvé dans le hall' }
       });
-
       assert.equal(result.statut, 'EN_ATTENTE');
-      assert.equal(result.source, 'IMAGE');
-      assert.match(result.reason, /inapproprié/);
+      assert.equal(result.source, 'TEXTE');
+      assert.equal(result.reason, 'Texte inapproprié détecté');
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test('Prompt blocked by Gemini safety filters is attributed to TEXTE', async () => {
+    process.env.GEMINI_API_KEY = 'mock-key';
+
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ promptFeedback: { blockReason: 'SAFETY' } })
+    });
+
+    try {
+      const result = await moderateDeclarationContent({
+        textFields: { titre: 'Texte bloqué', description: 'Contenu bloqué par Google' }
+      });
+      assert.equal(result.statut, 'EN_ATTENTE');
+      assert.equal(result.source, 'TEXTE');
+      assert.match(result.reason, /SAFETY/);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test('Flags Tunisian Derja insults in text (text moderation still works)', async () => {
+    process.env.GEMINI_API_KEY = 'mock-key';
+
+    let promptText;
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async (_url, options) => {
+      promptText = JSON.parse(options.body).contents[0].parts[0].text;
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          candidates: [{ content: { parts: [{ text: JSON.stringify({ conforme: false, source: 'TEXTE', motif: 'Insulte en dialecte tunisien détectée.' }) }] } }]
+        })
+      };
+    };
+
+    try {
+      const req = { body: { titre: 'Sac perdu ya 7mar', description: 'Sac noir perdu, ya kelb rodhou' } };
+      await aiModeration(req, {}, () => {});
+      assert.match(promptText, /Derja/);
+      assert.match(promptText, /Description : Sac noir perdu, ya kelb rodhou/);
+      assert.equal(req.moderationResult.statut, 'EN_ATTENTE');
+      assert.equal(req.moderationResult.source, 'TEXTE');
+      assert.match(req.moderationResult.reason, /dialecte tunisien/);
     } finally {
       globalThis.fetch = originalFetch;
     }

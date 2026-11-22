@@ -6,18 +6,21 @@ import { roleMiddleware } from '../middlewares/role.js';
 import { ownerOrAdmin } from '../middlewares/ownerOrAdmin.js';
 import { checkStatusTransition } from '../middlewares/checkStatusTransition.js';
 import { validateRequest } from '../errors/validation/validateRequest.js';
-import { upload } from '../middlewares/upload.js';
 import { aiModeration } from '../middlewares/aiModeration.js';
 import { Role, TypeDeclaration, StatutDeclaration } from '../models/enums.js';
 
 const router = Router();
+
+// Les déclarations sont envoyées en JSON ou en urlencoded (plus de multipart / photos) :
+// contactVisible accepte donc aussi un booléen JSON en plus de la chaîne.
+const booleen = z.union([z.string(), z.boolean()]);
 router.use(authMiddleware);
 
 // ── Moderation : DOIT être avant /:id ────────
 router.get('/moderation', roleMiddleware([Role.ADMIN, Role.SUPER_ADMIN]), declarationController.getModerationQueue);
 
 // ── Création ─────────────────────────────────
-router.post('/', upload, validateRequest(z.object({
+router.post('/', validateRequest(z.object({
   type: z.enum([TypeDeclaration.PERDU, TypeDeclaration.TROUVE]),
   titre: z.string().min(3),
   description: z.string().min(10),
@@ -29,7 +32,7 @@ router.post('/', upload, validateRequest(z.object({
   longitude: z.string().optional(),
   couleur: z.string().optional(),
   marque: z.string().optional(),
-  contactVisible: z.string().optional()
+  contactVisible: booleen.optional()
 })), aiModeration, declarationController.createDeclaration);
 
 // ── Validation / Refus (Admin) ───────────────
@@ -56,7 +59,7 @@ router.get('/:id/history', ownerOrAdmin, declarationController.getDeclarationHis
 
 // ── CRUD ─────────────────────────────────────
 router.get('/:id', declarationController.getDeclarationById);
-router.put('/:id', ownerOrAdmin, upload, validateRequest(z.object({
+router.put('/:id', ownerOrAdmin, validateRequest(z.object({
   titre: z.string().min(3).optional(),
   description: z.string().min(10).optional(),
   categorie: z.string().optional(),
@@ -67,7 +70,7 @@ router.put('/:id', ownerOrAdmin, upload, validateRequest(z.object({
   longitude: z.string().optional(),
   couleur: z.string().optional(),
   marque: z.string().optional(),
-  contactVisible: z.string().optional()
+  contactVisible: booleen.optional()
 })), aiModeration, declarationController.updateDeclaration);
 router.delete('/:id', ownerOrAdmin, declarationController.deleteDeclaration);
 

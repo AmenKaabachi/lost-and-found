@@ -86,12 +86,12 @@ async function runDemo() {
     console.log(`Token JWT obtenu (tronqué) : ${userToken?.slice(0, 35)}...`);
 
     // -------------------------------------------------------------
-    // ÉTAPE 2 : CRÉATION DÉCLARATION PROPRE AVEC PHOTO (ACTIVE)
+    // ÉTAPE 2 : CRÉATION DÉCLARATION PROPRE (TEXTE UNIQUEMENT, ACTIVE)
     // -------------------------------------------------------------
     console.log('\n----------------------------------------------------------------');
-    console.log('ÉTAPE 2 : POST /api/declarations (Déclaration propre avec photo)');
+    console.log('ÉTAPE 2 : POST /api/declarations (Déclaration propre, texte uniquement)');
     console.log('----------------------------------------------------------------');
-    const cleanFormData = new FormData();
+    const cleanFormData = new URLSearchParams();
     cleanFormData.append('type', 'PERDU');
     cleanFormData.append('titre', 'Clés de voiture trouvées');
     cleanFormData.append('description', 'Trousseau de clés avec télécommande Renault et badge bleu trouvé au parking B.');
@@ -100,11 +100,6 @@ async function runDemo() {
     cleanFormData.append('lieuNom', 'Parking B');
     cleanFormData.append('zoneCampus', 'Zone Ouest');
     cleanFormData.append('contactVisible', 'true');
-
-    // Ajout d'une photo réelle (PNG)
-    const pngBuffer = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
-    const fileBlob = new Blob([pngBuffer], { type: 'image/png' });
-    cleanFormData.append('photos', fileBlob, 'cle_photo.png');
 
     const cleanRes = await fetch(`${baseUrl}/declarations`, {
       method: 'POST',
@@ -118,7 +113,6 @@ async function runDemo() {
       id: cleanJson.data?._id,
       titre: cleanJson.data?.titre,
       statut: cleanJson.data?.statut,
-      photos: cleanJson.data?.photos,
       aiModerationReason: cleanJson.data?.aiModerationReason,
       aiModerationSource: cleanJson.data?.aiModerationSource
     });

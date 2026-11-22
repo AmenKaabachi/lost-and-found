@@ -1,4 +1,4 @@
 # Declarations
 
-Reserved for lost/found declarations, photos, lifecycle history, and
-moderation integration. No functionality is implemented.
+Reserved for lost/found declarations (text only, no photos), lifecycle
+history, and text moderation integration. No functionality is implemented.

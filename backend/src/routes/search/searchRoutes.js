@@ -154,6 +154,15 @@ const suggestionsQuerySchema = z.object({
     .default('10')
 });
 
+const recentQuerySchema = z.object({
+  type: z.enum(Object.values(TypeDeclaration)).optional(),
+  limit: z.string().regex(/^\d+$/, 'limit doit être un entier positif')
+    .transform(Number)
+    .pipe(z.number().int().positive().max(20).safe())
+    .optional()
+    .default('10')
+});
+
 
 // 4. Middleware
 router.use(authMiddleware);
@@ -174,6 +183,12 @@ router.get(
   '/suggestions',
   validateRequest(suggestionsQuerySchema, 'query'),
   declarationSearchController.getSuggestions
+);
+
+router.get(
+  '/recent',
+  validateRequest(recentQuerySchema, 'query'),
+  declarationSearchController.getRecentDeclarations
 );
 
 // 6. Exports

@@ -13,6 +13,19 @@ import {
 } from '../../utils/search/searchUtils.js';
 
 // 2. Constants
+const PRIVATE_FIELDS_EXCLUSION = {
+  declarantId: 0,
+  numeroInventaire: 0,
+  aiModerationReason: 0,
+  aiModerationSource: 0,
+  motifRefus: 0,
+  isDeleted: 0,
+  archivedAt: 0,
+  'lieu.description': 0,
+  'detailsObjet.numeroSerie': 0
+};
+
+
 const SEARCHABLE_FIELDS = [
   'titre',
   'description',
@@ -324,17 +337,7 @@ export const searchDeclarations = async (query = {}) => {
   const [totalResults, declarations] = await Promise.all([
     Declaration.countDocuments(mongoFilter),
     findQuery
-    .select({
-      declarantId: 0,
-      numeroInventaire: 0,
-      aiModerationReason: 0,
-      aiModerationSource: 0,
-      motifRefus: 0,
-      isDeleted: 0,
-      archivedAt: 0,
-      'lieu.description': 0,
-      'detailsObjet.numeroSerie': 0
-    })
+    .select(PRIVATE_FIELDS_EXCLUSION)
     .populate('categorieId', 'nom')
     .lean()
   ]);
@@ -486,4 +489,17 @@ export const searchSuggestions = async ({ q, limit = 10 }) => {
     ...categories.map((categorie) => ({ type: 'categorie', valeur: categorie.nom })),
     ...titles.map((title) => ({ type: 'titre', valeur: title }))
   ].slice(0, limit);
+};
+
+
+// 10. Recent Declarations
+export const getRecentDeclarations = async ({ type, limit = 10 } = {}) => {
+  const declarations = await Declaration.find(buildMongoFilter({ type }))
+    .sort({ createdAt: -1, _id: -1 })
+    .limit(limit)
+    .select(PRIVATE_FIELDS_EXCLUSION)
+    .populate('categorieId', 'nom')
+    .lean();
+
+  return declarations.map(toPublicDeclaration);
 };

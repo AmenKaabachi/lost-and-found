@@ -23,7 +23,7 @@ before implementation.
 
 | Binôme | Responsibility |
 | --- | --- |
-| 1 | Users, declarations, authentication, security, and photo uploads |
+| 1 | Users, text-only declarations, authentication, security, and AI text moderation |
 | 2 | Search, filters, suggestions, campus map, saved searches, and alerts |
 | 3 | Matching, resolution, participant actions, messaging, and notifications |
 | 4 | Administration, moderation, reports, conflicts, statistics, and audit logs |

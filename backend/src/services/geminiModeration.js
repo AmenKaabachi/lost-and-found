@@ -1,9 +1,7 @@
-import fs from 'fs';
-import path from 'path';
 import logger from '../errors/logging/logger.js';
 
 const SYSTEM_PROMPT = `Tu es un système d'analyse et de modération automatique de contenu pour une plateforme universitaire d'objets perdus et trouvés ("LOST & FOUND") dans un campus en Tunisie.
-Ta mission est d'analyser le contenu d'une déclaration (titre, description, lieu, détails d'objet) ainsi que les éventuelles photos jointes, afin d'identifier tout contenu inapproprié ou frauduleux.
+Ta mission est d'analyser le contenu textuel d'une déclaration (titre, description, lieu, catégorie, détails d'objet), afin d'identifier tout contenu inapproprié ou frauduleux.
 
 IMPORTANT — LANGUES ET DIALECTES :
 Les utilisateurs sont des étudiants tunisiens. Ils peuvent écrire en :
@@ -27,69 +25,27 @@ Critères de modération TEXTE :
 - Arnaques, escroqueries, tentatives de phishing, spam publicitaire.
 Remarque : Les descriptions légitimes d'objets usuels égarés ou retrouvés sur un campus (portefeuilles, clés, sacs, téléphones avec écran rayé ou fissuré, vêtements, documents d'identité trouvés, cartes étudiantes, etc.) sont tout à fait conformes. Ne pas pénaliser un ton naturel ou informel dès lors qu'il n'est ni injurieux ni malveillant. Des expressions familières tunisiennes inoffensives comme "ya 5ouya" (mon frère), "barcha" (beaucoup), "chnoua" (quoi), "win" (où), "mahlebi" etc. sont parfaitement acceptables.
 
-Critères de modération IMAGE :
-- Nudité, pornographie, tenues ou poses suggestives.
-- Violence, sang, mutilations, armes, drogues illicites.
-- Gestes offensants, insultants ou symboles haineux.
-- Images choquantes, grotesques, ou sans aucun rapport avec un objet perdu/trouvé dans une intention malveillante.
-Remarque : Les photos réelles d'objets perdus ou trouvés (clés, téléphones, sacs, ordinateurs, écouteurs, vêtements, portefeuilles, cartes, etc.) sont conformes.
-
 FORMAT DE RÉPONSE OBLIGATOIRE (JSON STRICT UNIQUEMENT) :
 {
   "conforme": true | false,
-  "source": "TEXTE" | "IMAGE" | null,
+  "source": "TEXTE" | null,
   "motif": string | null
 }
 
 Règles de décision pour la réponse :
 - Si tout est conforme : { "conforme": true, "source": null, "motif": null }
 - Si le texte contient des propos inappropriés ou grossiers : { "conforme": false, "source": "TEXTE", "motif": "<Explication claire et concise en français de la raison du signalement>" }
-- Si une image est inappropriée : { "conforme": false, "source": "IMAGE", "motif": "<Explication claire et concise en français de la raison du signalement de l'image>" }
-- Si le texte ET une image sont inappropriés : { "conforme": false, "source": "TEXTE", "motif": "<Explication concise résumant le problème textuel et visuel>" }
 `;
 
-function getMimeType(filePath, explicitMimeType) {
-  if (explicitMimeType && typeof explicitMimeType === 'string' && explicitMimeType.startsWith('image/')) {
-    return explicitMimeType;
-  }
-  if (!filePath) return 'image/jpeg';
-  const ext = path.extname(filePath).toLowerCase();
-  switch (ext) {
-    case '.png':
-      return 'image/png';
-    case '.webp':
-      return 'image/webp';
-    case '.gif':
-      return 'image/gif';
-    case '.jpg':
-    case '.jpeg':
-    default:
-      return 'image/jpeg';
-  }
-}
-
-function resolveFilePath(filePath) {
-  if (!filePath) return null;
-  if (path.isAbsolute(filePath) && fs.existsSync(filePath)) {
-    return filePath;
-  }
-  const relativeFromCwd = path.resolve(process.cwd(), filePath);
-  if (fs.existsSync(relativeFromCwd)) {
-    return relativeFromCwd;
-  }
-  return null;
-}
-
 /**
- * Modère le texte et les photos d'une déclaration via l'API Gemini de Google.
- * 
+ * Modère le texte d'une déclaration via l'API Gemini de Google (modération exclusivement textuelle).
+ *
  * @param {Object} options
  * @param {Object} options.textFields - Champs texte (titre, description, lieuNom, zoneCampus, categorie, couleur, marque)
- * @param {Array} [options.imageFiles] - Fichiers images (objets multer avec path/mimetype ou chaînes chemins)
  * @param {number} [options.timeoutMs] - Délai max en ms avant timeout (par défaut 10000ms)
- * @returns {Promise<{ statut: 'ACTIVE' | 'EN_ATTENTE', reason: string | null, source: 'TEXTE' | 'IMAGE' | null }>}
+ * @returns {Promise<{ statut: 'ACTIVE' | 'EN_ATTENTE', reason: string | null, source: 'TEXTE' | null }>}
  */
-export async function moderateDeclarationContent({ textFields = {}, imageFiles = [], timeoutMs = 10000 }) {
+export async function moderateDeclarationContent({ textFields = {}, timeoutMs = 10000 }) {
   const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || process.env.GOOGLE_GENAI_API_KEY;
 
   if (!apiKey) {
@@ -121,31 +77,6 @@ export async function moderateDeclarationContent({ textFields = {}, imageFiles =
       text: `${SYSTEM_PROMPT}\n\n--- DÉCLARATION À ANALYSER ---\n${textPayload}`
     }
   ];
-
-  let hasImages = false;
-  if (Array.isArray(imageFiles) && imageFiles.length > 0) {
-    for (const item of imageFiles) {
-      const rawPath = typeof item === 'string' ? item : item?.path;
-      const explicitMime = typeof item === 'object' ? item?.mimetype : null;
-      const resolved = resolveFilePath(rawPath);
-
-      if (resolved) {
-        try {
-          const buffer = await fs.promises.readFile(resolved);
-          const mimeType = getMimeType(resolved, explicitMime);
-          parts.push({
-            inlineData: {
-              mimeType,
-              data: buffer.toString('base64')
-            }
-          });
-          hasImages = true;
-        } catch (readErr) {
-          logger.warn({ err: readErr, path: rawPath }, 'Impossible de lire le fichier image pour la modération');
-        }
-      }
-    }
-  }
 
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
   const requestBody = {
@@ -194,7 +125,7 @@ export async function moderateDeclarationContent({ textFields = {}, imageFiles =
       return {
         statut: 'EN_ATTENTE',
         reason: `Contenu bloqué par les filtres de sécurité IA (${data.promptFeedback.blockReason})`,
-        source: hasImages ? 'IMAGE' : 'TEXTE'
+        source: 'TEXTE'
       };
     }
 
@@ -206,7 +137,7 @@ export async function moderateDeclarationContent({ textFields = {}, imageFiles =
       return {
         statut: 'EN_ATTENTE',
         reason: 'Contenu signalé pour non-respect des critères de sécurité IA',
-        source: hasImages ? 'IMAGE' : 'TEXTE'
+        source: 'TEXTE'
       };
     }
 
@@ -242,13 +173,11 @@ export async function moderateDeclarationContent({ textFields = {}, imageFiles =
       };
     }
 
-    const source = parsed.source === 'IMAGE' ? 'IMAGE' : 'TEXTE';
-    const reason = parsed.motif || (source === 'IMAGE' ? 'Image inappropriée détectée' : 'Texte inapproprié détecté');
-
+    // Modération exclusivement textuelle : toute non-conformité est attribuée au texte.
     return {
       statut: 'EN_ATTENTE',
-      reason,
-      source
+      reason: parsed.motif || 'Texte inapproprié détecté',
+      source: 'TEXTE'
     };
   } catch (err) {
     clearTimeout(timer);

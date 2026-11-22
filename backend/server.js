@@ -25,9 +25,6 @@ app.use(express.urlencoded({ extended: true }));
 // Locale AVANT les routes
 app.use(localeMiddleware);
 
-// Fichiers statiques (photos)
-app.use('/uploads', express.static('uploads'));
-
 // Rate limit global
 app.use(generalLimiter);
 

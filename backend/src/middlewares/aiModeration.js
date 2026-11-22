@@ -4,7 +4,7 @@ import logger from '../errors/logging/logger.js';
 
 /**
  * Middleware de modération IA basé sur l'API Google Gemini.
- * Analyse le texte (titre, description, lieu) et les photos sans les données de contact.
+ * Analyse uniquement le texte (titre, description, lieu, catégorie, détails) sans les données de contact.
  * Calcule le statut : ACTIVE si tout est conforme, EN_ATTENTE sinon.
  * Si l'API est indisponible ou dépasse le délai : EN_ATTENTE (jamais de publication sans analyse).
  * Ne rejette jamais la requête.
@@ -32,12 +32,7 @@ export const aiModeration = async (req, res, next) => {
       marque: req.body.marque ?? req.declaration?.detailsObjet?.marque
     };
 
-    const imageFiles = req.files || [];
-
-    const result = await moderateDeclarationContent({
-      textFields,
-      imageFiles
-    });
+    const result = await moderateDeclarationContent({ textFields });
 
     req.moderationResult = result;
     next();

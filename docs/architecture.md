@@ -8,8 +8,8 @@ in the application entry point.
 
 ## Module boundaries
 
-- **Users, declarations, and security:** identity, profiles, declarations,
-  uploads, lifecycle history, moderation requests, and security policies.
+- **Users, declarations, and security:** identity, profiles, text-only
+  declarations (no photos), lifecycle history, moderation requests, and security policies.
 - **Search and exploration:** active-declaration queries, filters, suggestions,
   pagination, campus geography, saved searches, and optional alerts.
 - **Matching and resolution:** automatic and scheduled matching, confidence,
@@ -35,7 +35,7 @@ must not leak into routes or domain logic.
 ## Provisional data concepts
 
 The likely concepts are users, declarations, declaration status history,
-photos, reports, matches, match actions, conversations, notifications, saved
+reports, matches, match actions, conversations, notifications, saved
 searches, and audit events. These are preliminary concepts only; the supplied
 API workbook and use-case diagram must be checked before models or endpoints
 are created.

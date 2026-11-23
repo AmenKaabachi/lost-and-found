@@ -4,6 +4,15 @@ import { z } from 'zod';
 import mongoose from 'mongoose';
 import { authMiddleware } from '../../middlewares/auth.js';
 import { validateRequest } from '../../errors/validation/validateRequest.js';
+import {
+  declarationsSearchLimiter,
+  mapSearchLimiter,
+  suggestionsLimiter,
+  recentSearchLimiter,
+  filtersSearchLimiter,
+  savedSearchReadLimiter,
+  savedSearchWriteLimiter
+} from '../../middlewares/rateLimiter.js';
 import * as declarationSearchController from '../../controllers/search/declarationSearchController.js';
 import { TypeDeclaration } from '../../models/enums.js';
 
@@ -192,41 +201,48 @@ router.use(authMiddleware);
 // 5. Route Definitions
 router.get(
   '/declarations',
+  declarationsSearchLimiter,
   validateRequest(declarationSearchQuerySchema, 'query'),
   declarationSearchController.searchDeclarations
 );
 router.get(
   '/map',
+  mapSearchLimiter,
   validateRequest(mapSearchQuerySchema, 'query'),
   declarationSearchController.searchMap
 );
-
 router.get(
   '/suggestions',
+  suggestionsLimiter,
   validateRequest(suggestionsQuerySchema, 'query'),
   declarationSearchController.getSuggestions
 );
-
 router.get(
   '/recent',
+  recentSearchLimiter,
   validateRequest(recentQuerySchema, 'query'),
   declarationSearchController.getRecentDeclarations
 );
-
 router.get(
   '/filters',
+  filtersSearchLimiter,
   validateRequest(filtersQuerySchema, 'query'),
   declarationSearchController.getSearchFilters
 );
-
 router.post(
   '/saved',
+  savedSearchWriteLimiter,
   validateRequest(createSavedSearchSchema),
   declarationSearchController.createSavedSearch
 );
-router.get('/saved', declarationSearchController.listSavedSearches);
+router.get(
+  '/saved',
+  savedSearchReadLimiter,
+  declarationSearchController.listSavedSearches
+);
 router.delete(
   '/saved/:id',
+  savedSearchWriteLimiter,
   validateRequest(savedSearchIdParamsSchema, 'params'),
   declarationSearchController.deleteSavedSearch
 );

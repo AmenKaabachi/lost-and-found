@@ -23,3 +23,23 @@ export const generalLimiter = rateLimit({
   max: 300,
   handler: rateLimitHandler
 });
+
+
+// Search limiters
+const createSearchLimiter = (max) => rateLimit({
+  windowMs: 60 * 1000,
+  max,
+  handler: rateLimitHandler,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => String(req.user?._id ?? req.ip),
+  skip: () => process.env.NODE_ENV === 'test'
+});
+
+export const declarationsSearchLimiter = createSearchLimiter(60);
+export const mapSearchLimiter = createSearchLimiter(30);
+export const suggestionsLimiter = createSearchLimiter(30);
+export const recentSearchLimiter = createSearchLimiter(30);
+export const filtersSearchLimiter = createSearchLimiter(30);
+export const savedSearchReadLimiter = createSearchLimiter(30);
+export const savedSearchWriteLimiter = createSearchLimiter(10);

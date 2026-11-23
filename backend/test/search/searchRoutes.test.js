@@ -9,8 +9,10 @@ import Declaration from '../../src/models/Declaration.js';
 import Categorie from '../../src/models/Categorie.js';
 import RechercheEnregistree from '../../src/models/RechercheEnregistree.js';
 import { errorHandler } from '../../src/errors/core/errorHandler.js';
+import { localeMiddleware } from '../../src/errors/localization/localeMiddleware.js';
 
 // 2. Test Setup
+process.env.NODE_ENV = 'test';
 const listen = (app) => new Promise((resolve) => {
   const server = app.listen(0, '127.0.0.1', () => resolve(server));
 });
@@ -843,4 +845,156 @@ test('Saved search list and delete are limited to the authenticated owner', asyn
   assert.equal(missingBody.error.code, 'RESOURCE_NOT_FOUND');
   assert.equal(missingBody.error.message, 'Saved search not found');
   assert.deepEqual(deleteFilter, { _id: 'bbbbbbbbbbbbbbbbbbbbbbbb', utilisateurId: OWNER_ID });
+});
+
+
+// 8. Rate Limiter Tests
+const startRateLimitApp = async () => {
+  process.env.JWT_SECRET = 'search-test-secret';
+  process.env.NODE_ENV = 'development';
+
+  const originals = {
+    findById: Utilisateur.findById,
+    find: Declaration.find,
+    aggregate: Declaration.aggregate,
+    findCategories: Categorie.find,
+    findSaved: RechercheEnregistree.find,
+    create: RechercheEnregistree.create
+  };
+
+  Utilisateur.findById = async (id) => ({
+    _id: String(id),
+    statut: 'ACTIF',
+    emailVerifie: true,
+    role: 'MEMBRE',
+    notificationsEmail: true
+  });
+  const chain = (result) => ({
+    sort() { return this; },
+    limit() { return this; },
+    select() { return this; },
+    populate() { return this; },
+    lean: async () => result
+  });
+  Declaration.find = () => chain([]);
+  Declaration.aggregate = async () => [{ categories: [], couleurs: [], zones: [], lieux: [] }];
+  Categorie.find = () => chain([]);
+  RechercheEnregistree.find = () => chain([]);
+  RechercheEnregistree.create = async (payload) => ({ toObject: () => ({ _id: 'saved-1', ...payload }) });
+
+  const app = express();
+  app.use(express.json());
+  app.use(localeMiddleware);
+  app.use('/api/search', searchRoutes);
+  app.use(errorHandler);
+
+  const server = await listen(app);
+
+  return {
+    baseUrl: `http://127.0.0.1:${server.address().port}`,
+    headersFor: (userId, extra = {}) => ({
+      Authorization: `Bearer ${jwt.sign({ id: userId }, process.env.JWT_SECRET)}`,
+      'Content-Type': 'application/json',
+      ...extra
+    }),
+    close: async () => {
+      await new Promise((resolve) => server.close(resolve));
+      process.env.NODE_ENV = 'test';
+      Utilisateur.findById = originals.findById;
+      Declaration.find = originals.find;
+      Declaration.aggregate = originals.aggregate;
+      Categorie.find = originals.findCategories;
+      RechercheEnregistree.find = originals.findSaved;
+      RechercheEnregistree.create = originals.create;
+    }
+  };
+};
+
+test('Suggestions limiter returns a standard 429 above the limit and keeps headers', async (t) => {
+  const { baseUrl, headersFor, close } = await startRateLimitApp();
+  t.after(close);
+  const headers = headersFor('607f1f77bcf86cd799439001');
+
+  const first = await fetch(`${baseUrl}/api/search/suggestions?q=wal`, { headers });
+  assert.equal(first.status, 200);
+  assert.equal(first.headers.get('ratelimit-limit'), '30');
+  assert.equal(first.headers.get('ratelimit-remaining'), '29');
+  assert.ok(first.headers.get('ratelimit-reset'));
+  assert.equal(first.headers.get('x-ratelimit-limit'), null);
+
+  for (let index = 2; index <= 30; index += 1) {
+    const response = await fetch(`${baseUrl}/api/search/suggestions?q=wal`, { headers });
+    assert.equal(response.status, 200, `request ${index}`);
+  }
+
+  const limited = await fetch(`${baseUrl}/api/search/suggestions?q=wal`, { headers });
+  assert.equal(limited.status, 429);
+  assert.ok(limited.headers.get('retry-after'));
+  assert.equal(limited.headers.get('ratelimit-remaining'), '0');
+  const body = await limited.json();
+  assert.equal(body.success, false);
+  assert.equal(body.error.code, 'TOO_MANY_REQUESTS');
+  assert.equal(body.error.message, 'Too many requests, try again later');
+  assert.equal(body.error.details, null);
+});
+
+test('Limiters are separate per endpoint and per user', async (t) => {
+  const { baseUrl, headersFor, close } = await startRateLimitApp();
+  t.after(close);
+  const userA = headersFor('607f1f77bcf86cd799439002');
+  const userB = headersFor('607f1f77bcf86cd799439003');
+
+  for (let index = 1; index <= 30; index += 1) {
+    await fetch(`${baseUrl}/api/search/suggestions?q=wal`, { headers: userA });
+  }
+  assert.equal((await fetch(`${baseUrl}/api/search/suggestions?q=wal`, { headers: userA })).status, 429);
+
+  assert.equal((await fetch(`${baseUrl}/api/search/suggestions?q=wal`, { headers: userB })).status, 200);
+  assert.equal((await fetch(`${baseUrl}/api/search/recent`, { headers: userA })).status, 200);
+  assert.equal((await fetch(`${baseUrl}/api/search/filters`, { headers: userA })).status, 200);
+  assert.equal((await fetch(`${baseUrl}/api/search/saved`, { headers: userA })).status, 200);
+});
+
+test('Saved search writes are limited to 10 per minute and reads stay available', async (t) => {
+  const { baseUrl, headersFor, close } = await startRateLimitApp();
+  t.after(close);
+  const headers = headersFor('607f1f77bcf86cd799439004');
+  const payload = JSON.stringify({ nom: 'Mes clés', filtres: { q: 'clés' } });
+
+  for (let index = 1; index <= 10; index += 1) {
+    const response = await fetch(`${baseUrl}/api/search/saved`, { method: 'POST', headers, body: payload });
+    assert.equal(response.status, 201, `write ${index}`);
+  }
+
+  const limited = await fetch(`${baseUrl}/api/search/saved`, { method: 'POST', headers, body: payload });
+  assert.equal(limited.status, 429);
+  assert.equal((await limited.json()).error.code, 'TOO_MANY_REQUESTS');
+
+  const deleteLimited = await fetch(`${baseUrl}/api/search/saved/aaaaaaaaaaaaaaaaaaaaaaaa`, { method: 'DELETE', headers });
+  assert.equal(deleteLimited.status, 429);
+
+  assert.equal((await fetch(`${baseUrl}/api/search/saved`, { headers })).status, 200);
+});
+
+test('Limiter message follows the request language', async (t) => {
+  const { baseUrl, headersFor, close } = await startRateLimitApp();
+  t.after(close);
+
+  const expected = {
+    fr: 'Trop de requêtes, réessayez plus tard',
+    ar: 'طلبات كثيرة جداً، حاول لاحقاً',
+    es: 'Too many requests, try again later'
+  };
+
+  let index = 0;
+  for (const [language, message] of Object.entries(expected)) {
+    index += 1;
+    const headers = headersFor(`607f1f77bcf86cd79943900${index + 4}`, { 'X-Language': language });
+    for (let call = 1; call <= 30; call += 1) {
+      await fetch(`${baseUrl}/api/search/suggestions?q=wal`, { headers });
+    }
+    const limited = await fetch(`${baseUrl}/api/search/suggestions?q=wal`, { headers });
+    assert.equal(limited.status, 429, language);
+    assert.equal((await limited.json()).error.message, message, language);
+  }
 });

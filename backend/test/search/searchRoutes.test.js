@@ -7,6 +7,7 @@ import searchRoutes from '../../src/routes/search/searchRoutes.js';
 import Utilisateur from '../../src/models/Utilisateur.js';
 import Declaration from '../../src/models/Declaration.js';
 import Categorie from '../../src/models/Categorie.js';
+import RechercheEnregistree from '../../src/models/RechercheEnregistree.js';
 import { errorHandler } from '../../src/errors/core/errorHandler.js';
 
 // 2. Test Setup
@@ -604,4 +605,242 @@ test('Filters return categories and deduplicated values with counts', async (t) 
   assert.deepEqual(emptyBody.data.zones, []);
   assert.deepEqual(emptyBody.data.lieux, []);
   assert.equal(emptyBody.data.categories.length, 2);
+});
+
+
+// 7. Saved Searches Tests
+const OWNER_ID = '507f1f77bcf86cd799439011';
+const OTHER_ID = '507f1f77bcf86cd799439022';
+
+const startSavedSearchApp = async ({ notificationsEmail = true } = {}) => {
+  process.env.JWT_SECRET = 'search-test-secret';
+
+  const originals = {
+    findById: Utilisateur.findById,
+    create: RechercheEnregistree.create,
+    find: RechercheEnregistree.find,
+    findOneAndDelete: RechercheEnregistree.findOneAndDelete
+  };
+
+  Utilisateur.findById = async () => ({
+    _id: OWNER_ID,
+    statut: 'ACTIF',
+    emailVerifie: true,
+    role: 'MEMBRE',
+    notificationsEmail
+  });
+
+  const app = express();
+  app.use(express.json());
+  app.use((req, _res, next) => {
+    req.locale = 'en';
+    next();
+  });
+  app.use('/api/search', searchRoutes);
+  app.use(errorHandler);
+
+  const server = await listen(app);
+  const token = jwt.sign({ id: OWNER_ID }, process.env.JWT_SECRET);
+
+  return {
+    baseUrl: `http://127.0.0.1:${server.address().port}`,
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    close: async () => {
+      await new Promise((resolve) => server.close(resolve));
+      Utilisateur.findById = originals.findById;
+      RechercheEnregistree.create = originals.create;
+      RechercheEnregistree.find = originals.find;
+      RechercheEnregistree.findOneAndDelete = originals.findOneAndDelete;
+    }
+  };
+};
+
+test('Saved search routes require authentication and validate input', async (t) => {
+  const { baseUrl, headers, close } = await startSavedSearchApp();
+  t.after(close);
+
+  RechercheEnregistree.create = async () => {
+    throw new Error('create must not be called for invalid input');
+  };
+  RechercheEnregistree.findOneAndDelete = async () => {
+    throw new Error('delete must not be called for an invalid id');
+  };
+
+  assert.equal((await fetch(`${baseUrl}/api/search/saved`)).status, 401);
+  assert.equal((await fetch(`${baseUrl}/api/search/saved`, { method: 'POST' })).status, 401);
+  assert.equal((await fetch(`${baseUrl}/api/search/saved/${OWNER_ID}`, { method: 'DELETE' })).status, 401);
+
+  const invalidBodies = [
+    {},
+    { nom: 'Mes clés' },
+    { filtres: { q: 'clés' } },
+    { nom: 'ab', filtres: { q: 'clés' } },
+    { nom: 'a'.repeat(51), filtres: { q: 'clés' } },
+    { nom: 'Mes clés', filtres: [] },
+    { nom: 'Mes clés', filtres: 'clés' },
+    { nom: 'Mes clés', filtres: { type: 'XYZ' } },
+    { nom: 'Mes clés', filtres: { categorie: 'abc' } },
+    { nom: 'Mes clés', filtres: { lat: 'abc', lng: 10 } },
+    { nom: 'Mes clés', filtres: { radius: 100 } },
+    { nom: 'Mes clés', filtres: { radius: 5000, lat: 36.8, lng: 10.1 } },
+    { nom: 'Mes clés', filtres: { sort: 'distance' } },
+    { nom: 'Mes clés', filtres: { dateDebut: '2026-12-01', dateFin: '2026-11-01' } },
+    { nom: 'Mes clés', filtres: { q: 'clés' }, alerteEmail: 'yes' }
+  ];
+
+  for (const payload of invalidBodies) {
+    const response = await fetch(`${baseUrl}/api/search/saved`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(payload)
+    });
+    assert.equal(response.status, 400, JSON.stringify(payload));
+    const body = await response.json();
+    assert.equal(body.success, false);
+    assert.equal(body.error.code, 'VALIDATION_ERROR');
+  }
+
+  for (const id of ['123', 'zzzzzzzzzzzzzzzzzzzzzzzz', 'abcdefghijkl']) {
+    const response = await fetch(`${baseUrl}/api/search/saved/${id}`, { method: 'DELETE', headers });
+    assert.equal(response.status, 400, id);
+    assert.equal((await response.json()).error.code, 'VALIDATION_ERROR');
+  }
+});
+
+test('Saved search creation uses the authenticated owner and clean filters', async (t) => {
+  const { baseUrl, headers, close } = await startSavedSearchApp();
+  t.after(close);
+  let created;
+
+  RechercheEnregistree.create = async (payload) => {
+    created = payload;
+    return {
+      toObject: () => ({
+        _id: 'saved-1',
+        ...payload,
+        createdAt: '2026-11-22T10:00:00.000Z',
+        updatedAt: '2026-11-22T10:00:00.000Z',
+        __v: 0
+      })
+    };
+  };
+
+  const response = await fetch(`${baseUrl}/api/search/saved`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      utilisateurId: OTHER_ID,
+      nom: '  Mes clés  ',
+      filtres: { q: 'clés', type: 'PERDU', lat: 36.8, lng: 10.18, radius: 500, page: 3, limit: 50 },
+      alerteEmail: false
+    })
+  });
+
+  assert.equal(response.status, 201);
+  const body = await response.json();
+  assert.equal(body.success, true);
+  assert.equal(body.message, 'Saved search created');
+  assert.equal(body.data._id, 'saved-1');
+  assert.equal(body.data.nom, 'Mes clés');
+  assert.equal(body.data.__v, undefined);
+  assert.equal(body.data.utilisateurId, undefined);
+
+  assert.equal(created.utilisateurId, OWNER_ID);
+  assert.equal(created.nom, 'Mes clés');
+  assert.equal(created.alerteEmail, false);
+  assert.equal(created.filtres.q, 'clés');
+  assert.equal(created.filtres.type, 'PERDU');
+  assert.equal(created.filtres.lat, 36.8);
+  assert.equal(created.filtres.lng, 10.18);
+  assert.equal(created.filtres.radius, 500);
+  assert.equal(created.filtres.page, undefined);
+  assert.equal(created.filtres.limit, undefined);
+
+  const defaultAlert = await fetch(`${baseUrl}/api/search/saved`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ nom: 'Sans alerte', filtres: { couleur: 'vert' } })
+  });
+  assert.equal(defaultAlert.status, 201);
+  assert.equal(created.alerteEmail, false);
+});
+
+test('Saved search alert requires email notifications to be enabled', async (t) => {
+  const disabled = await startSavedSearchApp({ notificationsEmail: false });
+  t.after(disabled.close);
+  let createdCount = 0;
+
+  RechercheEnregistree.create = async (payload) => {
+    createdCount += 1;
+    return { toObject: () => ({ _id: `saved-${createdCount}`, ...payload }) };
+  };
+
+  const rejected = await fetch(`${disabled.baseUrl}/api/search/saved`, {
+    method: 'POST',
+    headers: disabled.headers,
+    body: JSON.stringify({ nom: 'Avec alerte', filtres: { q: 'clés' }, alerteEmail: true })
+  });
+  assert.equal(rejected.status, 400);
+  const rejectedBody = await rejected.json();
+  assert.equal(rejectedBody.error.code, 'VALIDATION_ERROR');
+  assert.deepEqual(rejectedBody.error.details.alerteEmail, ['Email notifications are disabled in your profile']);
+  assert.equal(createdCount, 0);
+
+  const withoutAlert = await fetch(`${disabled.baseUrl}/api/search/saved`, {
+    method: 'POST',
+    headers: disabled.headers,
+    body: JSON.stringify({ nom: 'Sans alerte', filtres: { q: 'clés' } })
+  });
+  assert.equal(withoutAlert.status, 201);
+  assert.equal(createdCount, 1);
+});
+
+test('Saved search list and delete are limited to the authenticated owner', async (t) => {
+  const { baseUrl, headers, close } = await startSavedSearchApp();
+  t.after(close);
+  let findFilter;
+  let deleteFilter;
+  let stored = [
+    { _id: 's2', nom: 'Deuxième', filtres: { q: 'sac' }, alerteEmail: true, createdAt: '2026-11-21', updatedAt: '2026-11-21', utilisateurId: OWNER_ID, __v: 0 },
+    { _id: 's1', nom: 'Première', filtres: { q: 'clés' }, alerteEmail: false, createdAt: '2026-11-20', updatedAt: '2026-11-20', utilisateurId: OWNER_ID, __v: 0 }
+  ];
+
+  RechercheEnregistree.find = (filter) => {
+    findFilter = filter;
+    return { sort() { return this; }, lean: async () => stored };
+  };
+  RechercheEnregistree.findOneAndDelete = async (filter) => {
+    deleteFilter = filter;
+    return filter._id === 'aaaaaaaaaaaaaaaaaaaaaaaa' && filter.utilisateurId === OWNER_ID
+      ? { _id: filter._id }
+      : null;
+  };
+
+  const list = await fetch(`${baseUrl}/api/search/saved`, { headers });
+  assert.equal(list.status, 200);
+  const listBody = await list.json();
+  assert.equal(listBody.message, 'Saved searches retrieved');
+  assert.deepEqual(listBody.data.map((item) => item._id), ['s2', 's1']);
+  assert.equal(listBody.data[0].utilisateurId, undefined);
+  assert.equal(listBody.data[0].__v, undefined);
+  assert.deepEqual(findFilter, { utilisateurId: OWNER_ID });
+
+  stored = [];
+  const empty = await fetch(`${baseUrl}/api/search/saved`, { headers });
+  assert.equal(empty.status, 200);
+  assert.deepEqual((await empty.json()).data, []);
+
+  const removed = await fetch(`${baseUrl}/api/search/saved/aaaaaaaaaaaaaaaaaaaaaaaa`, { method: 'DELETE', headers });
+  assert.equal(removed.status, 200);
+  const removedBody = await removed.json();
+  assert.equal(removedBody.message, 'Saved search deleted');
+  assert.deepEqual(removedBody.data, { _id: 'aaaaaaaaaaaaaaaaaaaaaaaa' });
+  assert.deepEqual(deleteFilter, { _id: 'aaaaaaaaaaaaaaaaaaaaaaaa', utilisateurId: OWNER_ID });
+
+  const missing = await fetch(`${baseUrl}/api/search/saved/bbbbbbbbbbbbbbbbbbbbbbbb`, { method: 'DELETE', headers });
+  assert.equal(missing.status, 404);
+  const missingBody = await missing.json();
+  assert.equal(missingBody.error.code, 'RESOURCE_NOT_FOUND');
+  assert.equal(missingBody.error.message, 'Saved search not found');
+  assert.deepEqual(deleteFilter, { _id: 'bbbbbbbbbbbbbbbbbbbbbbbb', utilisateurId: OWNER_ID });
 });

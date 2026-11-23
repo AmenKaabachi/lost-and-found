@@ -1,6 +1,7 @@
 // 1. Imports
 import Declaration from '../../models/Declaration.js';
 import Categorie from '../../models/Categorie.js';
+import RechercheEnregistree from '../../models/RechercheEnregistree.js';
 import { StatutDeclaration } from '../../models/enums.js';
 import {
   buildKeywordRegex,
@@ -572,4 +573,42 @@ export const getSearchFilters = async ({ type } = {}) => {
     zones: mergeValueGroups(facets.zones),
     lieux: mergeValueGroups(facets.lieux)
   };
+};
+
+// 12. Saved Searches
+const toPublicSavedSearch = (savedSearch) => ({
+  _id: savedSearch._id,
+  nom: savedSearch.nom,
+  filtres: savedSearch.filtres,
+  alerteEmail: savedSearch.alerteEmail,
+  createdAt: savedSearch.createdAt,
+  updatedAt: savedSearch.updatedAt
+});
+
+export const createSavedSearch = async ({ userId, nom, filtres, alerteEmail }) => {
+  const savedSearch = await RechercheEnregistree.create({
+    utilisateurId: userId,
+    nom,
+    filtres,
+    alerteEmail
+  });
+
+  return toPublicSavedSearch(savedSearch.toObject());
+};
+
+export const listSavedSearches = async (userId) => {
+  const savedSearches = await RechercheEnregistree.find({ utilisateurId: userId })
+    .sort({ createdAt: -1, _id: -1 })
+    .lean();
+
+  return savedSearches.map(toPublicSavedSearch);
+};
+
+export const deleteSavedSearch = async ({ userId, id }) => {
+  const deletedSearch = await RechercheEnregistree.findOneAndDelete({
+    _id: id,
+    utilisateurId: userId
+  });
+
+  return Boolean(deletedSearch);
 };

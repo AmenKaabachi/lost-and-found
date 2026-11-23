@@ -167,6 +167,25 @@ const filtersQuerySchema = z.object({
   type: z.enum(Object.values(TypeDeclaration)).optional()
 });
 
+const savedSearchFiltersSchema = z.preprocess(
+  (value) => (value && typeof value === 'object' && !Array.isArray(value)
+    ? Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [key, typeof item === 'number' ? String(item) : item])
+    )
+    : value),
+  declarationSearchQuerySchema
+).transform(({ page, limit, ...filters }) => filters);
+
+const createSavedSearchSchema = z.object({
+  nom: z.string().trim().min(3).max(50),
+  filtres: savedSearchFiltersSchema,
+  alerteEmail: z.boolean().optional().default(false)
+});
+
+const savedSearchIdParamsSchema = z.object({
+  id: z.string().regex(/^[0-9a-fA-F]{24}$/, 'Identifiant invalide')
+});
+
 // 4. Middleware
 router.use(authMiddleware);
 
@@ -198,6 +217,18 @@ router.get(
   '/filters',
   validateRequest(filtersQuerySchema, 'query'),
   declarationSearchController.getSearchFilters
+);
+
+router.post(
+  '/saved',
+  validateRequest(createSavedSearchSchema),
+  declarationSearchController.createSavedSearch
+);
+router.get('/saved', declarationSearchController.listSavedSearches);
+router.delete(
+  '/saved/:id',
+  validateRequest(savedSearchIdParamsSchema, 'params'),
+  declarationSearchController.deleteSavedSearch
 );
 
 // 6. Exports

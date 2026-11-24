@@ -19,6 +19,10 @@ const getEmailMessages = (locale) => {
  */
 const sendWithResend = async ({ to, subject, html, idempotencyKey, tag }) => {
   try {
+    if (!resend) {
+      logger.warn({ to, tag }, 'Email sending skipped: Resend is not configured');
+      return { success: false, error: 'Email service is not configured' };
+    }
     const { data, error } = await resend.emails.send(
       {
         from: FROM,

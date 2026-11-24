@@ -9,7 +9,6 @@ import { AppError } from '../errors/core/AppError.js';
 import { ERROR_CODES } from '../errors/core/errorCodes.js';
 import { translations } from '../errors/localization/translation.js';
 import { sendSuccess } from '../errors/core/responseHelpers.js';
-
 import { asyncHandler } from '../errors/middleware/asyncHandler.js';
 import { Role } from '../models/enums.js';
 
@@ -29,6 +28,32 @@ const checkDeclarationAccess = (declaration, user, m) => {
     declaration.declarantId.toString() === user._id.toString();
 
   if (!isOwner && !isAdmin(user)) {
+    throw new AppError(
+      403,
+      ERROR_CODES.FORBIDDEN,
+      m.forbidden
+    );
+  }
+};
+
+// Vérifie que le membre possède au moins une des deux déclarations.
+const checkCorrespondenceAccess = (match, user, m) => {
+  if (isAdmin(user)) {
+    return;
+  }
+
+  const userId = user._id.toString();
+
+  const lostOwner =
+    match.declarationPerdueId.declarantId.toString();
+
+  const foundOwner =
+    match.declarationTrouveeId.declarantId.toString();
+
+  const ownsLostDeclaration = lostOwner === userId;
+  const ownsFoundDeclaration = foundOwner === userId;
+
+  if (!ownsLostDeclaration && !ownsFoundDeclaration) {
     throw new AppError(
       403,
       ERROR_CODES.FORBIDDEN,
@@ -73,6 +98,7 @@ export const getMatches = asyncHandler(async (req, res) => {
   const m = translations[req.locale];
 
   const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
+
   const limit = Math.min(
     Math.max(parseInt(req.query.limit, 10) || 20, 1),
     100
@@ -87,7 +113,11 @@ export const getMatches = asyncHandler(async (req, res) => {
   if (req.query.minScore !== undefined) {
     const minScore = Number(req.query.minScore);
 
-    if (!Number.isFinite(minScore) || minScore < 0 || minScore > 100) {
+    if (
+      !Number.isFinite(minScore) ||
+      minScore < 0 ||
+      minScore > 100
+    ) {
       throw new AppError(
         400,
         ERROR_CODES.VALIDATION_ERROR,
@@ -95,13 +125,20 @@ export const getMatches = asyncHandler(async (req, res) => {
       );
     }
 
-    filter.score = { ...filter.score, $gte: minScore };
+    filter.score = {
+      ...filter.score,
+      $gte: minScore
+    };
   }
 
   if (req.query.maxScore !== undefined) {
     const maxScore = Number(req.query.maxScore);
 
-    if (!Number.isFinite(maxScore) || maxScore < 0 || maxScore > 100) {
+    if (
+      !Number.isFinite(maxScore) ||
+      maxScore < 0 ||
+      maxScore > 100
+    ) {
       throw new AppError(
         400,
         ERROR_CODES.VALIDATION_ERROR,
@@ -109,7 +146,10 @@ export const getMatches = asyncHandler(async (req, res) => {
       );
     }
 
-    filter.score = { ...filter.score, $lte: maxScore };
+    filter.score = {
+      ...filter.score,
+      $lte: maxScore
+    };
   }
 
   if (
@@ -124,10 +164,11 @@ export const getMatches = asyncHandler(async (req, res) => {
     );
   }
 
-  // Un administrateur peut consulter toutes les correspondances
-  // liées à des déclarations non supprimées.
-  // Un membre ne voit que les correspondances de ses déclarations.
-  const declarationFilter = { isDeleted: false };
+  // Un administrateur voit toutes les correspondances.
+  // Un membre voit celles qui concernent ses déclarations.
+  const declarationFilter = {
+    isDeleted: false
+  };
 
   if (!isAdmin(req.user)) {
     declarationFilter.declarantId = req.user._id;
@@ -137,7 +178,9 @@ export const getMatches = asyncHandler(async (req, res) => {
     .select('_id')
     .lean();
 
-  const declarationIds = declarations.map((declaration) => declaration._id);
+  const declarationIds = declarations.map(
+    (declaration) => declaration._id
+  );
 
   if (declarationIds.length === 0) {
     return sendSuccess(res, {
@@ -150,22 +193,28 @@ export const getMatches = asyncHandler(async (req, res) => {
   }
 
   filter.$or = [
-    { declarationPerdueId: { $in: declarationIds } },
-    { declarationTrouveeId: { $in: declarationIds } }
+    {
+      declarationPerdueId: {
+        $in: declarationIds
+      }
+    },
+    {
+      declarationTrouveeId: {
+        $in: declarationIds
+      }
+    }
   ];
 
-  const [matches, total] = await Promise.all([
-    populateCorrespondance(
-      Correspondance.find(filter)
-        .sort({ score: -1, createdAt: -1 })
-        .skip((page - 1) * limit)
-        .limit(limit)
-    ),
-    Correspondance.countDocuments(filter)
-  ]);
+  // On récupère les correspondances avant pagination
+  // afin d'exclure correctement celles dont une déclaration
+  // est supprimée ou n'existe plus.
+  const matches = await populateCorrespondance(
+    Correspondance.find(filter).sort({
+      score: -1,
+      createdAt: -1
+    })
+  );
 
-  // Ne pas afficher une correspondance si l'autre déclaration
-  // a été supprimée.
   const visibleMatches = matches.filter(
     (match) =>
       match.declarationPerdueId &&
@@ -174,8 +223,17 @@ export const getMatches = asyncHandler(async (req, res) => {
       !match.declarationTrouveeId.isDeleted
   );
 
-  sendSuccess(res, {
-    matches: visibleMatches,
+  const total = visibleMatches.length;
+
+  const startIndex = (page - 1) * limit;
+
+  const paginatedMatches = visibleMatches.slice(
+    startIndex,
+    startIndex + limit
+  );
+
+  return sendSuccess(res, {
+    matches: paginatedMatches,
     total,
     page,
     limit,
@@ -207,10 +265,9 @@ export const getMatchById = asyncHandler(async (req, res) => {
     );
   }
 
-  checkDeclarationAccess(match.declarationPerdueId, req.user, m);
-  checkDeclarationAccess(match.declarationTrouveeId, req.user, m);
+  checkCorrespondenceAccess(match, req.user, m);
 
-  sendSuccess(res, match);
+  return sendSuccess(res, match);
 });
 
 // GET /api/matches/:id/history
@@ -237,8 +294,7 @@ export const getMatchHistory = asyncHandler(async (req, res) => {
     );
   }
 
-  checkDeclarationAccess(match.declarationPerdueId, req.user, m);
-  checkDeclarationAccess(match.declarationTrouveeId, req.user, m);
+  checkCorrespondenceAccess(match, req.user, m);
 
   const history = await JournalAudit.find({
     entiteId: match._id,
@@ -247,7 +303,7 @@ export const getMatchHistory = asyncHandler(async (req, res) => {
     .sort({ createdAt: 1 })
     .populate('acteurId', 'nom prenom');
 
-  sendSuccess(res, history);
+  return sendSuccess(res, history);
 });
 
 // GET /api/declarations/:id/matches
@@ -265,8 +321,12 @@ export const getDeclarationMatches = asyncHandler(async (req, res) => {
 
   const filter = {
     $or: [
-      { declarationPerdueId: declaration._id },
-      { declarationTrouveeId: declaration._id }
+      {
+        declarationPerdueId: declaration._id
+      },
+      {
+        declarationTrouveeId: declaration._id
+      }
     ]
   };
 
@@ -289,5 +349,5 @@ export const getDeclarationMatches = asyncHandler(async (req, res) => {
       !match.declarationTrouveeId.isDeleted
   );
 
-  sendSuccess(res, visibleMatches);
+  return sendSuccess(res, visibleMatches);
 });

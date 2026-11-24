@@ -13,7 +13,7 @@ export const getMyProfile = asyncHandler(async (req, res) => {
 });
 
 export const updateMyProfile = asyncHandler(async (req, res) => {
-  const allowed = ['nom', 'prenom', 'telephone', 'avatar', 'notificationsEmail'];
+  const allowed = ['nom', 'prenom', 'telephone', 'avatar', 'notificationsEmail', 'moyenTransport', 'lieuResidence', 'nomEtablissement'];
   const updates = {};
   allowed.forEach(k => { if (req.body[k] !== undefined) updates[k] = req.body[k]; });
 
@@ -32,6 +32,9 @@ export const deleteMyAccount = asyncHandler(async (req, res) => {
   utilisateur.statut = StatutUtilisateur.SUSPENDU;
   utilisateur.telephone = null;
   utilisateur.avatar = null;
+  utilisateur.moyenTransport = null;
+  utilisateur.lieuResidence = null;
+  utilisateur.nomEtablissement = null;
   await utilisateur.save();
 
   sendSuccess(res, null, 'Account deleted');
@@ -98,7 +101,7 @@ export const getUserDeclarations = asyncHandler(async (req, res) => {
 
 export const updateUserByAdmin = asyncHandler(async (req, res) => {
   const m = translations[req.locale];
-  const allowed = ['nom', 'prenom', 'telephone'];
+  const allowed = ['nom', 'prenom', 'telephone', 'moyenTransport', 'lieuResidence', 'nomEtablissement'];
   const updates = {};
   allowed.forEach(k => { if (req.body[k] !== undefined) updates[k] = req.body[k]; });
 

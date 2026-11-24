@@ -1,4 +1,4 @@
-// ─── ÉTATS API (source de vérité pour l'API) ────────────
+
 export const Role = Object.freeze({
   MEMBRE: 'MEMBRE',
   ADMIN: 'ADMIN',
@@ -17,20 +17,28 @@ export const StatutUtilisateur = Object.freeze({
   SUSPENDU: 'SUSPENDU'
 });
 
+export const MoyenTransport = Object.freeze({
+  BUS: 'BUS',
+  METRO: 'METRO',
+  TRAIN: 'TRAIN',
+  VOITURE: 'VOITURE',
+  LOUAGE: 'LOUAGE',
+  MARCHE: 'MARCHE',
+  AUTRE: 'AUTRE'
+});
+
 export const TypeDeclaration = Object.freeze({
   PERDU: 'PERDU',
   TROUVE: 'TROUVE'
 });
 
 export const StatutDeclaration = Object.freeze({
-  // ── États API exposés ─────────────────────────────
   ACTIVE: 'ACTIVE',
   EN_ATTENTE: 'EN_ATTENTE',
   REFUSEE: 'REFUSEE',
   MASQUEE: 'MASQUEE',
   ANNULEE: 'ANNULEE',
   RESTITUEE: 'RESTITUEE',
-  // ── États UML réservés (matching/résolution futurs) ─
   MATCH_FOUND: 'MATCH_FOUND',
   RESOLUTION_IN_PROGRESS: 'RESOLUTION_IN_PROGRESS',
   RESOLVED: 'RESOLVED',
@@ -46,12 +54,45 @@ export const StatutGarde = Object.freeze({
   UNKNOWN: 'UNKNOWN'
 });
 
+// Statut général d'une correspondance
 export const StatutCorrespondance = Object.freeze({
   PROPOSEE: 'PROPOSEE',
   A_VERIFIER: 'A_VERIFIER',
+  EN_ATTENTE_REPONSE: 'EN_ATTENTE_REPONSE',
+  EN_DISCUSSION: 'EN_DISCUSSION',
+  EN_CONFLIT: 'EN_CONFLIT',
   VALIDEE: 'VALIDEE',
   REJETEE: 'REJETEE',
   ANNULEE: 'ANNULEE'
+});
+
+// Première réponse de chaque déclarant
+export const StatutReponseCorrespondance = Object.freeze({
+  EN_ATTENTE: 'EN_ATTENTE',
+  ACCEPTEE: 'ACCEPTEE',
+  REFUSEE: 'REFUSEE',
+  INCERTAINE: 'INCERTAINE'
+});
+
+// Décision de chaque déclarant après discussion
+export const DecisionFinaleCorrespondance = Object.freeze({
+  EN_ATTENTE: 'EN_ATTENTE',
+  CONFIRMEE: 'CONFIRMEE',
+  REJETEE: 'REJETEE'
+});
+
+// Types de conflits détectés dans le matching
+export const TypeConflitMatching = Object.freeze({
+  EGALITE_SCORE: 'EGALITE_SCORE',
+  DESACCORD_UTILISATEURS: 'DESACCORD_UTILISATEURS'
+});
+
+// État de traitement d'un conflit par l'administration
+export const StatutConflitMatching = Object.freeze({
+  EN_ATTENTE: 'EN_ATTENTE',
+  INFORMATIONS_DEMANDEES: 'INFORMATIONS_DEMANDEES',
+  EN_REEVALUATION: 'EN_REEVALUATION',
+  RESOLU: 'RESOLU'
 });
 
 export const StatutResolution = Object.freeze({

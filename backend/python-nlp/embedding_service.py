@@ -1,8 +1,9 @@
+
 from sentence_transformers import SentenceTransformer
 import numpy as np
 
 
-MODEL_NAME = "intfloat/multilingual-e5-small"
+MODEL_NAME = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
 
 
 class EmbeddingService:
@@ -19,11 +20,11 @@ class EmbeddingService:
 
     @staticmethod
     def prepare_query(text: str) -> str:
-        return f"query: {text.strip()}"
+        return text.strip()
 
     @staticmethod
     def prepare_passage(text: str) -> str:
-        return f"passage: {text.strip()}"
+        return text.strip()
 
     def calculate_similarity(
         self,
@@ -51,7 +52,6 @@ class EmbeddingService:
 
         similarity = float(np.dot(embeddings[0], embeddings[1]))
 
-        # Conversion en intervalle [0, 1] pour notre API.
         similarity = max(0.0, min(1.0, similarity))
 
         return round(similarity, 4)

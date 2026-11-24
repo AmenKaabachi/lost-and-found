@@ -26,7 +26,6 @@ const declarationSchema = new mongoose.Schema({
   detailsObjet: { type: itemDetailsSchema, default: () => ({}) },
   lieu: { type: locationInfoSchema, default: () => ({}) },
   dateEvenement: { type: Date, required: true },
-  photos: { type: [String], default: [] },
   statut: { type: String, enum: Object.values(StatutDeclaration), default: StatutDeclaration.ACTIVE },
   statutGarde: { type: String, enum: Object.values(StatutGarde), default: StatutGarde.UNKNOWN },
   archivedAt: { type: Date, default: null },

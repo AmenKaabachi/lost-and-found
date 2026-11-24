@@ -23,12 +23,22 @@ export const translations = {
     declarationNotPending: 'Declaration is not pending moderation',
     internalError: 'An internal server error occurred',
     user: 'User',
+
     declaration: 'Declaration',
     savedSearch: 'Saved search',
     savedSearchCreated: 'Saved search created',
     savedSearchesFound: 'Saved searches retrieved',
     savedSearchDeleted: 'Saved search deleted',
     alertEmailDisabled: 'Email notifications are disabled in your profile',
+    suggestionsFound: 'Suggestions found',
+    noSuggestionsFound: 'No suggestions found',
+    filtersRetrieved: 'Search filters retrieved',
+    invalidType: 'Invalid value type',
+    numberTooBig: (max) => `Must be at most ${max}`,
+    numberTooSmall: (min, inclusive = true) => (inclusive ? `Must be at least ${min}` : `Must be greater than ${min}`),
+    limitMustBePositiveInteger: 'limit must be a positive integer',
+    pageMustBePositiveInteger: 'page must be a positive integer',
+    
     emailField: 'email',
     accountNotVerified: 'Email address not verified',
     codeExpired: 'The verification code is invalid or has expired',
@@ -130,12 +140,21 @@ export const translations = {
     declarationNotPending: 'La déclaration n\'est pas en attente de modération',
     internalError: 'Une erreur interne est survenue',
     user: 'Utilisateur',
+
     declaration: 'Déclaration',
     savedSearch: 'Recherche enregistrée',
     savedSearchCreated: 'Recherche enregistrée créée',
     savedSearchesFound: 'Recherches enregistrées récupérées',
     savedSearchDeleted: 'Recherche enregistrée supprimée',
     alertEmailDisabled: 'Les notifications par email sont désactivées dans votre profil',
+    suggestionsFound: 'Suggestions trouvées',
+    noSuggestionsFound: 'Aucune suggestion trouvée',
+    filtersRetrieved: 'Filtres de recherche récupérés',
+    invalidType: 'Type de valeur invalide',
+    numberTooBig: (max) => `Doit être inférieur ou égal à ${max}`,
+    numberTooSmall: (min, inclusive = true) => (inclusive ? `Doit être supérieur ou égal à ${min}` : `Doit être supérieur à ${min}`),
+    limitMustBePositiveInteger: 'limit doit être un entier positif',
+    pageMustBePositiveInteger: 'page doit être un entier positif',
 
     emailField: 'email',
     accountNotVerified: 'Adresse email non vérifiée',
@@ -234,12 +253,21 @@ export const translations = {
     declarationNotPending: 'الإعلان ليس قيد المراجعة',
     internalError: 'حدث خطأ داخلي في الخادم',
     user: 'المستخدم',
+
     declaration: 'الإعلان',
     savedSearch: 'البحث المحفوظ',
     savedSearchCreated: 'تم إنشاء البحث المحفوظ',
     savedSearchesFound: 'تم استرجاع عمليات البحث المحفوظة',
     savedSearchDeleted: 'تم حذف البحث المحفوظ',
     alertEmailDisabled: 'إشعارات البريد الإلكتروني معطلة في ملفك الشخصي',
+    suggestionsFound: 'تم العثور على اقتراحات',
+    noSuggestionsFound: 'لم يتم العثور على اقتراحات',
+    filtersRetrieved: 'تم استرجاع عوامل تصفية البحث',
+    invalidType: 'نوع القيمة غير صالح',
+    numberTooBig: (max) => `يجب ألا يتجاوز ${max}`,
+    numberTooSmall: (min, inclusive = true) => (inclusive ? `يجب أن يكون ${min} على الأقل` : `يجب أن يكون أكبر من ${min}`),
+    limitMustBePositiveInteger: 'يجب أن يكون limit عددًا صحيحًا موجبًا',
+    pageMustBePositiveInteger: 'يجب أن يكون page عددًا صحيحًا موجبًا',
 
     emailField: 'البريد الإلكتروني',
     accountNotVerified: 'عنوان البريد الإلكتروني غير مؤكد',
@@ -341,6 +369,8 @@ export const translateValidationMessage = (locale, message) => {
     'Radius invalide': m.invalidRadius,
     'Identifiant de catégorie invalide': m.invalidCategoryId,
     'Identifiant invalide': m.invalidUuid,
+    'limit doit être un entier positif': m.limitMustBePositiveInteger,
+    'page doit être un entier positif': m.pageMustBePositiveInteger,
     'dateFin doit être postérieure ou égale à dateDebut': m.dateFinBeforeDateDebut,
     'lat est obligatoire pour le tri par distance': m.latitudeRequiredForDistance,
     'lng est obligatoire pour le tri par distance': m.longitudeRequiredForDistance,
@@ -360,16 +390,18 @@ export const buildZodErrorMap = (locale) => {
     switch (issue.code) {
       case z.ZodIssueCode.invalid_type:
         if (issue.received === 'undefined' || issue.received === 'null') return { message: m.required };
-        break;
+        return { message: m.invalidType };
       case z.ZodIssueCode.invalid_string:
         if (issue.validation === 'email') return { message: m.invalidEmail };
         if (issue.validation === 'uuid') return { message: m.invalidUuid };
         break;
       case z.ZodIssueCode.too_small:
         if (issue.type === 'string') return { message: m.tooShort(issue.minimum) };
+        if (issue.type === 'number') return { message: m.numberTooSmall(issue.minimum, issue.inclusive) };
         break;
       case z.ZodIssueCode.too_big:
         if (issue.type === 'string') return { message: m.tooLong(issue.maximum) };
+        if (issue.type === 'number') return { message: m.numberTooBig(issue.maximum) };
         break;
       case z.ZodIssueCode.invalid_enum_value:
         return { message: m.invalidEnum(issue.options) };

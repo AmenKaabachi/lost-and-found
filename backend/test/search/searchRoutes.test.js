@@ -998,3 +998,273 @@ test('Limiter message follows the request language', async (t) => {
     assert.equal((await limited.json()).error.message, message, language);
   }
 });
+
+
+// 9. Localization Tests
+const LANGUAGES = ['en', 'fr', 'ar', 'es'];
+
+const startLocalizationApp = async () => {
+  process.env.JWT_SECRET = 'search-test-secret';
+
+  const originals = {
+    findById: Utilisateur.findById,
+    find: Declaration.find,
+    aggregate: Declaration.aggregate,
+    findCategories: Categorie.find,
+    findSaved: RechercheEnregistree.find,
+    create: RechercheEnregistree.create,
+    findOneAndDelete: RechercheEnregistree.findOneAndDelete
+  };
+  const state = {
+    categories: [{ _id: 'c1', nom: 'Wallet' }],
+    declarations: [{ _id: 'd1', titre: 'Green wallet', type: 'PERDU' }],
+    deleteResult: { _id: 'aaaaaaaaaaaaaaaaaaaaaaaa' },
+    notificationsEmail: true
+  };
+
+  Utilisateur.findById = async () => ({
+    _id: OWNER_ID,
+    statut: 'ACTIF',
+    emailVerifie: true,
+    role: 'MEMBRE',
+    notificationsEmail: state.notificationsEmail
+  });
+  const chain = (result) => ({
+    sort() { return this; },
+    limit() { return this; },
+    select() { return this; },
+    populate() { return this; },
+    lean: async () => result
+  });
+  Declaration.find = () => chain(state.declarations);
+  Declaration.aggregate = async () => [{ categories: [], couleurs: [], zones: [], lieux: [] }];
+  Categorie.find = () => chain(state.categories);
+  RechercheEnregistree.find = () => chain([]);
+  RechercheEnregistree.create = async (payload) => ({ toObject: () => ({ _id: 'saved-1', ...payload }) });
+  RechercheEnregistree.findOneAndDelete = async () => state.deleteResult;
+
+  const app = express();
+  app.use(express.json());
+  app.use(localeMiddleware);
+  app.use('/api/search', searchRoutes);
+  app.use(errorHandler);
+
+  const server = await listen(app);
+  const token = jwt.sign({ id: OWNER_ID }, process.env.JWT_SECRET);
+
+  const callInAllLanguages = async (method, path, { body, authenticated = true } = {}) => {
+    const results = {};
+    for (const language of LANGUAGES) {
+      const headers = { 'Content-Type': 'application/json', 'X-Language': language };
+      if (authenticated) headers.Authorization = `Bearer ${token}`;
+      const response = await fetch(`http://127.0.0.1:${server.address().port}/api/search${path}`, {
+        method,
+        headers,
+        body: body ? JSON.stringify(body) : undefined
+      });
+      results[language] = { status: response.status, body: await response.json() };
+    }
+    return results;
+  };
+
+  return {
+    state,
+    callInAllLanguages,
+    close: async () => {
+      await new Promise((resolve) => server.close(resolve));
+      Utilisateur.findById = originals.findById;
+      Declaration.find = originals.find;
+      Declaration.aggregate = originals.aggregate;
+      Categorie.find = originals.findCategories;
+      RechercheEnregistree.find = originals.findSaved;
+      RechercheEnregistree.create = originals.create;
+      RechercheEnregistree.findOneAndDelete = originals.findOneAndDelete;
+    }
+  };
+};
+
+const assertLocalized = (results, expected, detailsKey) => {
+  const english = results.en;
+
+  for (const language of LANGUAGES) {
+    const { status, body } = results[language];
+    assert.equal(status, english.status, `${language} status`);
+    assert.equal(body.success, english.body.success, `${language} success`);
+
+    if (english.body.error) assert.equal(body.error.code, english.body.error.code, `${language} code`);
+    else assert.deepEqual(body.data, english.body.data, `${language} data`);
+  }
+
+  const textOf = ({ body }) => {
+    if (!body.error) return body.message;
+    return detailsKey ? body.error.details[detailsKey][0] : body.error.message;
+  };
+
+  assert.equal(textOf(results.en), expected.en);
+  assert.equal(textOf(results.fr), expected.fr);
+  assert.equal(textOf(results.ar), expected.ar);
+  assert.equal(textOf(results.es), expected.en, 'unsupported language falls back to English');
+};
+
+test('Suggestions and filters success messages are localized', async (t) => {
+  const { state, callInAllLanguages, close } = await startLocalizationApp();
+  t.after(close);
+
+  assertLocalized(await callInAllLanguages('GET', '/suggestions?q=wal'), {
+    en: 'Suggestions found',
+    fr: 'Suggestions trouvées',
+    ar: 'تم العثور على اقتراحات'
+  });
+
+  state.categories = [];
+  state.declarations = [];
+  assertLocalized(await callInAllLanguages('GET', '/suggestions?q=zzz'), {
+    en: 'No suggestions found',
+    fr: 'Aucune suggestion trouvée',
+    ar: 'لم يتم العثور على اقتراحات'
+  });
+
+  assertLocalized(await callInAllLanguages('GET', '/filters'), {
+    en: 'Search filters retrieved',
+    fr: 'Filtres de recherche récupérés',
+    ar: 'تم استرجاع عوامل تصفية البحث'
+  });
+});
+
+test('Recent and saved search messages are localized', async (t) => {
+  const { state, callInAllLanguages, close } = await startLocalizationApp();
+  t.after(close);
+
+  assertLocalized(await callInAllLanguages('GET', '/recent'), {
+    en: 'Declarations found',
+    fr: 'Déclarations trouvées',
+    ar: 'تم العثور على إعلانات'
+  });
+
+  state.declarations = [];
+  assertLocalized(await callInAllLanguages('GET', '/recent'), {
+    en: 'No declarations match your search',
+    fr: 'Aucune déclaration ne correspond à votre recherche',
+    ar: 'لا توجد إعلانات تطابق بحثك'
+  });
+
+  assertLocalized(
+    await callInAllLanguages('POST', '/saved', { body: { nom: 'Mes clés', filtres: { q: 'clés' } } }),
+    {
+      en: 'Saved search created',
+      fr: 'Recherche enregistrée créée',
+      ar: 'تم إنشاء البحث المحفوظ'
+    }
+  );
+
+  assertLocalized(await callInAllLanguages('GET', '/saved'), {
+    en: 'Saved searches retrieved',
+    fr: 'Recherches enregistrées récupérées',
+    ar: 'تم استرجاع عمليات البحث المحفوظة'
+  });
+
+  assertLocalized(await callInAllLanguages('DELETE', '/saved/aaaaaaaaaaaaaaaaaaaaaaaa'), {
+    en: 'Saved search deleted',
+    fr: 'Recherche enregistrée supprimée',
+    ar: 'تم حذف البحث المحفوظ'
+  });
+
+  state.deleteResult = null;
+  assertLocalized(await callInAllLanguages('DELETE', '/saved/aaaaaaaaaaaaaaaaaaaaaaaa'), {
+    en: 'Saved search not found',
+    fr: 'Recherche enregistrée introuvable',
+    ar: 'البحث المحفوظ غير موجود'
+  });
+});
+
+test('Authentication and ownership-related errors are localized', async (t) => {
+  const { state, callInAllLanguages, close } = await startLocalizationApp();
+  t.after(close);
+
+  const unauthorized = await callInAllLanguages('GET', '/suggestions?q=wal', { authenticated: false });
+  assert.equal(unauthorized.en.status, 401);
+  assertLocalized(unauthorized, {
+    en: 'Unauthorized access',
+    fr: 'Accès non autorisé',
+    ar: 'وصول غير مصرح به'
+  });
+
+  state.notificationsEmail = false;
+  const alertDisabled = await callInAllLanguages('POST', '/saved', {
+    body: { nom: 'Avec alerte', filtres: { q: 'clés' }, alerteEmail: true }
+  });
+  assert.equal(alertDisabled.en.status, 400);
+  assertLocalized(alertDisabled, {
+    en: 'Email notifications are disabled in your profile',
+    fr: 'Les notifications par email sont désactivées dans votre profil',
+    ar: 'إشعارات البريد الإلكتروني معطلة في ملفك الشخصي'
+  }, 'alerteEmail');
+  assertLocalized(alertDisabled, {
+    en: 'The submitted data is invalid',
+    fr: 'Les données envoyées sont invalides',
+    ar: 'البيانات المرسلة غير صالحة'
+  });
+});
+
+test('Validation errors are localized for every Membre 2 route', async (t) => {
+  const { callInAllLanguages, close } = await startLocalizationApp();
+  t.after(close);
+
+  const cases = [
+    ['GET', '/suggestions', undefined, 'q', {
+      en: 'This field is required', fr: 'Ce champ est obligatoire', ar: 'هذا الحقل مطلوب'
+    }],
+    ['GET', '/suggestions?q=a', undefined, 'q', {
+      en: 'Must be at least 2 characters', fr: 'Doit contenir au moins 2 caractères', ar: 'يجب أن يكون على الأقل 2 أحرف'
+    }],
+    ['GET', '/suggestions?q=wal&limit=11', undefined, 'limit', {
+      en: 'Must be at most 10', fr: 'Doit être inférieur ou égal à 10', ar: 'يجب ألا يتجاوز 10'
+    }],
+    ['GET', '/suggestions?q=wal&limit=abc', undefined, 'limit', {
+      en: 'limit must be a positive integer', fr: 'limit doit être un entier positif', ar: 'يجب أن يكون limit عددًا صحيحًا موجبًا'
+    }],
+    ['GET', '/recent?limit=0', undefined, 'limit', {
+      en: 'Must be greater than 0', fr: 'Doit être supérieur à 0', ar: 'يجب أن يكون أكبر من 0'
+    }],
+    ['GET', '/recent?limit=21', undefined, 'limit', {
+      en: 'Must be at most 20', fr: 'Doit être inférieur ou égal à 20', ar: 'يجب ألا يتجاوز 20'
+    }],
+    ['GET', '/recent?type=XYZ', undefined, 'type', {
+      en: 'Invalid value. Options: PERDU, TROUVE',
+      fr: 'Valeur invalide. Options : PERDU, TROUVE',
+      ar: 'قيمة غير صالحة. الخيارات: PERDU, TROUVE'
+    }],
+    ['GET', '/filters?type=XYZ', undefined, 'type', {
+      en: 'Invalid value. Options: PERDU, TROUVE',
+      fr: 'Valeur invalide. Options : PERDU, TROUVE',
+      ar: 'قيمة غير صالحة. الخيارات: PERDU, TROUVE'
+    }],
+    ['GET', '/declarations?page=abc', undefined, 'page', {
+      en: 'page must be a positive integer', fr: 'page doit être un entier positif', ar: 'يجب أن يكون page عددًا صحيحًا موجبًا'
+    }],
+    ['POST', '/saved', { nom: 'ab', filtres: { q: 'clés' } }, 'nom', {
+      en: 'Must be at least 3 characters', fr: 'Doit contenir au moins 3 caractères', ar: 'يجب أن يكون على الأقل 3 أحرف'
+    }],
+    ['POST', '/saved', { nom: 'Test' }, 'filtres', {
+      en: 'This field is required', fr: 'Ce champ est obligatoire', ar: 'هذا الحقل مطلوب'
+    }],
+    ['POST', '/saved', { nom: 'Test', filtres: { radius: 100 } }, 'filtres', {
+      en: 'lat is required for the radius filter',
+      fr: 'lat est obligatoire pour le filtre radius',
+      ar: 'lat مطلوب لفلتر نصف القطر'
+    }],
+    ['POST', '/saved', { nom: 'Test', filtres: { q: 'clés' }, alerteEmail: 'oui' }, 'alerteEmail', {
+      en: 'Invalid value type', fr: 'Type de valeur invalide', ar: 'نوع القيمة غير صالح'
+    }],
+    ['DELETE', '/saved/123', undefined, 'id', {
+      en: 'Invalid ID format', fr: "Format d'identifiant invalide", ar: 'تنسيق المعرف غير صالح'
+    }]
+  ];
+
+  for (const [method, path, body, field, expected] of cases) {
+    const results = await callInAllLanguages(method, path, { body });
+    assert.equal(results.en.status, 400, `${method} ${path}`);
+    assert.equal(results.en.body.error.code, 'VALIDATION_ERROR', `${method} ${path}`);
+    assertLocalized(results, expected, field);
+  }
+});

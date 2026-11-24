@@ -41,10 +41,15 @@ export const searchMap = asyncHandler(async (req, res) => {
 
 
 export const getSuggestions = asyncHandler(async (req, res) => {
+  const m = translations[req.locale];
   const suggestions = await searchSuggestionsService(req.query);
 
   // 3. Response Handling
-  sendSuccess(res, suggestions);
+  const message = suggestions.length > 0
+    ? m.suggestionsFound
+    : m.noSuggestionsFound;
+
+  sendSuccess(res, suggestions, message);
 });
 
 
@@ -60,12 +65,12 @@ export const getRecentDeclarations = asyncHandler(async (req, res) => {
   sendSuccess(res, declarations, message, 200);
 });
 
-
 export const getSearchFilters = asyncHandler(async (req, res) => {
+  const m = translations[req.locale];
   const filters = await getSearchFiltersService(req.query);
 
   // 3. Response Handling
-  sendSuccess(res, filters);
+  sendSuccess(res, filters, m.filtersRetrieved);
 });
 
 

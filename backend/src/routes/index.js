@@ -7,6 +7,7 @@ import matchRouter from './matchRoutes.js';
 import declarationMatchRouter from './declarationMatchRoutes.js';
 import matchingConflictRouter from './matchingConflictRoutes.js';
 import resolutionRoutes from './resolutionRoutes.js';
+import adminRoutes from './adminRoutes.js';
 
 const router = Router();
 
@@ -17,5 +18,6 @@ router.use('/resolutions', resolutionRoutes);
 router.use('/declarations', declarationMatchRouter);
 router.use('/declarations', declarationRoutes);
 router.use('/users', userRoutes);
+router.use('/admin', adminRoutes);
 
 export default router;

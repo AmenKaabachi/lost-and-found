@@ -4,6 +4,7 @@ import { z } from 'zod';
 import * as systemController from '../controllers/admin/systemController.js';
 import * as reportController from '../controllers/admin/reportController.js';
 import * as moderationController from '../controllers/admin/moderationController.js';
+import * as statsController from '../controllers/admin/statsController.js';
 
 import { authMiddleware } from '../middlewares/auth.js';
 import { roleMiddleware } from '../middlewares/role.js';
@@ -66,5 +67,34 @@ router.post('/declarations/bulk-action', validateRequest(z.object({
   ids: z.array(objectId).min(1).max(100).transform((ids) => [...new Set(ids)]),
   motif: z.string().trim().min(3).max(500).optional()
 })), moderationController.bulkAction);
+
+// ─── Statistiques et export (ADMIN / SUPER_ADMIN) ────────
+const periodeSchema = {
+  startDate: z.coerce.date().optional(),
+  endDate: z.coerce.date().optional()
+};
+const periodeValide = (q) => !q.startDate || !q.endDate || q.startDate <= q.endDate;
+const messagePeriode = { message: 'startDate doit être avant endDate', path: ['startDate'] };
+
+router.get('/stats/overview', validateRequest(
+  z.object(periodeSchema).refine(periodeValide, messagePeriode), 'query'
+), statsController.getOverview);
+
+router.get('/stats/categories', validateRequest(
+  z.object(periodeSchema).refine(periodeValide, messagePeriode), 'query'
+), statsController.getCategories);
+
+router.get('/stats/evolution', validateRequest(
+  z.object({ ...periodeSchema, interval: z.enum(['daily', 'monthly']).default('daily') })
+    .refine(periodeValide, messagePeriode), 'query'
+), statsController.getEvolution);
+
+router.get('/export/stats', validateRequest(
+  z.object({
+    ...periodeSchema,
+    format: z.enum(['csv', 'pdf']).default('csv'),
+    interval: z.enum(['daily', 'monthly']).default('monthly')
+  }).refine(periodeValide, messagePeriode), 'query'
+), statsController.exportStats);
 
 export default router;

@@ -5,6 +5,8 @@ import * as systemController from '../controllers/admin/systemController.js';
 import * as reportController from '../controllers/admin/reportController.js';
 import * as moderationController from '../controllers/admin/moderationController.js';
 import * as statsController from '../controllers/admin/statsController.js';
+import * as logController from '../controllers/admin/logController.js';
+import * as adminNotificationController from '../controllers/admin/adminNotificationController.js';
 
 import { authMiddleware } from '../middlewares/auth.js';
 import { roleMiddleware } from '../middlewares/role.js';
@@ -96,5 +98,40 @@ router.get('/export/stats', validateRequest(
     interval: z.enum(['daily', 'monthly']).default('monthly')
   }).refine(periodeValide, messagePeriode), 'query'
 ), statsController.exportStats);
+// ─── Journal d'audit (SUPER_ADMIN) ───────────────────────
+router.get('/logs', superAdminOnly, validateRequest(z.object({
+  adminId: z.string().regex(/^[0-9a-fA-F]{24}$/, 'ID invalide').optional(),
+  action: z.string().trim().optional(),
+  typeEntite: z.string().trim().optional(),
+  startDate: z.coerce.date().optional(),
+  endDate: z.coerce.date().optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(20)
+}), 'query'), logController.getLogs);
 
+router.delete('/logs', superAdminOnly, validateRequest(z.object({
+  olderThanDays: z.coerce.number().int().min(1).max(3650)
+}), 'query'), logController.purgeLogs);
+
+// ─── Notifications ───────────────────────────────────────
+router.get('/notifications', validateRequest(z.object({
+  targetAudience: z.enum(['users', 'admins', 'all', 'user', 'system']).optional(),
+  type: z.string().trim().optional(),
+  archived: z.enum(['true', 'false']).optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(20)
+}), 'query'), adminNotificationController.listNotifications);
+
+router.post('/notifications/send', superAdminOnly, validateRequest(z.object({
+  targetAudience: z.enum(['users', 'admins', 'all', 'user']),
+  recipientId: z.string().regex(/^[0-9a-fA-F]{24}$/, 'ID invalide').optional(),
+  title: z.string().trim().min(3).max(150),
+  message: z.string().trim().min(3).max(2000),
+  type: z.string().trim().min(2).max(50).default('ANNONCE')
+}).refine((b) => b.targetAudience !== 'user' || b.recipientId, {
+  message: 'recipientId est obligatoire quand targetAudience = user',
+  path: ['recipientId']
+})), adminNotificationController.sendNotification);
+
+router.patch('/notifications/:id/archive', superAdminOnly, adminNotificationController.archiveNotification);
 export default router;

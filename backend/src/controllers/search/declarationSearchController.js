@@ -12,7 +12,10 @@ import {
   getSearchFilters as getSearchFiltersService,
   createSavedSearch as createSavedSearchService,
   listSavedSearches as listSavedSearchesService,
-  deleteSavedSearch as deleteSavedSearchService
+  deleteSavedSearch as deleteSavedSearchService,
+  listSearchNotifications as listSearchNotificationsService,
+  markNotificationAsRead as markNotificationAsReadService,
+  markAllNotificationsAsRead as markAllNotificationsAsReadService
 } from '../../services/search/declarationSearchService.js';
 // 2. Controller Functions
 export const searchDeclarations = asyncHandler(async (req, res) => {
@@ -116,4 +119,42 @@ export const deleteSavedSearch = asyncHandler(async (req, res) => {
 
   // 3. Response Handling
   sendSuccess(res, { _id: req.params.id }, m.savedSearchDeleted);
+});
+
+
+export const listNotifications = asyncHandler(async (req, res) => {
+  const m = translations[req.locale];
+  const { lue, limit } = req.query;
+  const { notifications, unreadCount } = await listSearchNotificationsService({
+    userId: req.user._id,
+    lue,
+    limit,
+    messages: m
+  });
+
+  // 3. Response Handling
+  sendSuccess(res, notifications, m.notificationsRetrieved, 200, { unreadCount });
+});
+
+export const markNotificationRead = asyncHandler(async (req, res) => {
+  const m = translations[req.locale];
+  const notification = await markNotificationAsReadService({
+    userId: req.user._id,
+    id: req.params.id
+  });
+
+  if (!notification) {
+    throw new AppError(404, ERROR_CODES.RESOURCE_NOT_FOUND, m.notFound(m.notification));
+  }
+
+  // 3. Response Handling
+  sendSuccess(res, notification, m.notificationMarkedRead);
+});
+
+export const markAllNotificationsRead = asyncHandler(async (req, res) => {
+  const m = translations[req.locale];
+  const modifiedCount = await markAllNotificationsAsReadService(req.user._id);
+
+  // 3. Response Handling
+  sendSuccess(res, { modifiedCount }, m.notificationsMarkedRead);
 });

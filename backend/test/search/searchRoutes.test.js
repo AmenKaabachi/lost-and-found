@@ -8,6 +8,7 @@ import Utilisateur from '../../src/models/Utilisateur.js';
 import Declaration from '../../src/models/Declaration.js';
 import Categorie from '../../src/models/Categorie.js';
 import RechercheEnregistree from '../../src/models/RechercheEnregistree.js';
+import Notification from '../../src/models/Notification.js';
 import { errorHandler } from '../../src/errors/core/errorHandler.js';
 import { localeMiddleware } from '../../src/errors/localization/localeMiddleware.js';
 
@@ -1267,4 +1268,252 @@ test('Validation errors are localized for every Membre 2 route', async (t) => {
     assert.equal(results.en.body.error.code, 'VALIDATION_ERROR', `${method} ${path}`);
     assertLocalized(results, expected, field);
   }
+});
+
+
+// 10. Notification Tests
+const NOTIFICATION_ID = 'aaaaaaaaaaaaaaaaaaaaaaaa';
+
+const startNotificationApp = async () => {
+  process.env.JWT_SECRET = 'search-test-secret';
+
+  const originals = {
+    findById: Utilisateur.findById,
+    declarationFind: Declaration.find,
+    find: Notification.find,
+    countDocuments: Notification.countDocuments,
+    findOneAndUpdate: Notification.findOneAndUpdate,
+    updateMany: Notification.updateMany
+  };
+  const state = {
+    notifications: [
+      { _id: 'n2', type: 'SAVED_SEARCH_MATCH', titre: 'stored', contenu: 'stored', referenceId: 'd1', referenceType: 'Declaration', lue: false, createdAt: '2026-11-26T10:00:00.000Z', destinataireId: OWNER_ID },
+      { _id: 'n1', type: 'SAVED_SEARCH_MATCH', titre: 'stored', contenu: 'stored', referenceId: 'd-hidden', referenceType: 'Declaration', lue: true, createdAt: '2026-11-25T10:00:00.000Z', destinataireId: OWNER_ID }
+    ],
+    unreadCount: 1,
+    declarations: [{ _id: 'd1', titre: 'Green wallet' }],
+    updated: { _id: NOTIFICATION_ID, lue: true },
+    modifiedCount: 3
+  };
+  const calls = {};
+
+  Utilisateur.findById = async () => ({
+    _id: OWNER_ID,
+    statut: 'ACTIF',
+    emailVerifie: true,
+    role: 'MEMBRE',
+    notificationsEmail: true
+  });
+  Notification.find = (filter) => {
+    calls.find = filter;
+    return {
+      sort(argument) { calls.sort = argument; return this; },
+      limit(argument) { calls.limit = argument; return this; },
+      lean: async () => state.notifications
+    };
+  };
+  Notification.countDocuments = async (filter) => {
+    calls.count = filter;
+    return state.unreadCount;
+  };
+  Declaration.find = (filter) => {
+    calls.declarationFind = filter;
+    return { select() { return this; }, lean: async () => state.declarations };
+  };
+  Notification.findOneAndUpdate = (filter, update, options) => {
+    calls.update = { filter, update, options };
+    return { lean: async () => state.updated };
+  };
+  Notification.updateMany = async (filter, update) => {
+    calls.updateMany = { filter, update };
+    return { modifiedCount: state.modifiedCount };
+  };
+
+  const app = express();
+  app.use(express.json());
+  app.use(localeMiddleware);
+  app.use('/api/search', searchRoutes);
+  app.use(errorHandler);
+
+  const server = await listen(app);
+  const token = jwt.sign({ id: OWNER_ID }, process.env.JWT_SECRET);
+
+  return {
+    state,
+    calls,
+    baseUrl: `http://127.0.0.1:${server.address().port}`,
+    headers: (language = 'en') => ({
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+      'X-Language': language
+    }),
+    close: async () => {
+      await new Promise((resolve) => server.close(resolve));
+      Utilisateur.findById = originals.findById;
+      Declaration.find = originals.declarationFind;
+      Notification.find = originals.find;
+      Notification.countDocuments = originals.countDocuments;
+      Notification.findOneAndUpdate = originals.findOneAndUpdate;
+      Notification.updateMany = originals.updateMany;
+    }
+  };
+};
+
+test('Notification routes require authentication and validate input', async (t) => {
+  const { baseUrl, headers, close } = await startNotificationApp();
+  t.after(close);
+
+  assert.equal((await fetch(`${baseUrl}/api/search/notifications`)).status, 401);
+  assert.equal((await fetch(`${baseUrl}/api/search/notifications/read-all`, { method: 'PATCH' })).status, 401);
+  assert.equal((await fetch(`${baseUrl}/api/search/notifications/${NOTIFICATION_ID}/read`, { method: 'PATCH' })).status, 401);
+
+  for (const suffix of ['?lue=maybe', '?lue=TRUE', '?limit=0', '?limit=51', '?limit=abc', '?lue=true&lue=false']) {
+    const response = await fetch(`${baseUrl}/api/search/notifications${suffix}`, { headers: headers() });
+    assert.equal(response.status, 400, suffix);
+    assert.equal((await response.json()).error.code, 'VALIDATION_ERROR');
+  }
+
+  for (const id of ['123', 'zzzzzzzzzzzzzzzzzzzzzzzz', 'abcdefghijkl']) {
+    const response = await fetch(`${baseUrl}/api/search/notifications/${id}/read`, { method: 'PATCH', headers: headers() });
+    assert.equal(response.status, 400, id);
+    assert.equal((await response.json()).error.code, 'VALIDATION_ERROR');
+  }
+
+  for (const suffix of ['', '?lue=false', '?lue=true&limit=50']) {
+    const response = await fetch(`${baseUrl}/api/search/notifications${suffix}`, { headers: headers() });
+    assert.equal(response.status, 200, suffix);
+  }
+});
+
+test('Notification list is limited to the owner and localized when read', async (t) => {
+  const { state, calls, baseUrl, headers, close } = await startNotificationApp();
+  t.after(close);
+
+  const expected = {
+    en: ['Notifications retrieved', 'New declaration matching your saved search', 'A new declaration matches your saved search: Green wallet', 'A new declaration matching your saved search was published'],
+    fr: ['Notifications récupérées', 'Nouvelle déclaration correspondant à votre recherche enregistrée', 'Une nouvelle déclaration correspond à votre recherche enregistrée : Green wallet', 'Une nouvelle déclaration correspondant à votre recherche enregistrée a été publiée'],
+    ar: ['تم استرجاع الإشعارات', 'إعلان جديد يطابق بحثك المحفوظ', 'إعلان جديد يطابق بحثك المحفوظ: Green wallet', 'تم نشر إعلان جديد يطابق بحثك المحفوظ'],
+    es: ['Notifications retrieved', 'New declaration matching your saved search', 'A new declaration matches your saved search: Green wallet', 'A new declaration matching your saved search was published']
+  };
+
+  for (const [language, [message, title, body, unavailableBody]] of Object.entries(expected)) {
+    const response = await fetch(`${baseUrl}/api/search/notifications`, { headers: headers(language) });
+    assert.equal(response.status, 200, language);
+    const result = await response.json();
+    assert.equal(result.message, message, language);
+    assert.equal(result.unreadCount, 1);
+    assert.deepEqual(result.data.map((item) => item._id), ['n2', 'n1']);
+    assert.equal(result.data[0].titre, title, language);
+    assert.equal(result.data[0].contenu, body, language);
+    assert.equal(result.data[1].contenu, unavailableBody, language);
+    assert.equal(result.data[0].lue, false);
+    assert.equal(result.data[0].destinataireId, undefined);
+  }
+
+  assert.deepEqual(calls.find, { destinataireId: OWNER_ID, type: { $in: ['SAVED_SEARCH_MATCH'] } });
+  assert.deepEqual(calls.count, { destinataireId: OWNER_ID, type: { $in: ['SAVED_SEARCH_MATCH'] }, lue: false });
+  assert.deepEqual(calls.sort, { createdAt: -1, _id: -1 });
+  assert.equal(calls.limit, 20);
+  assert.deepEqual(calls.declarationFind._id, { $in: ['d1', 'd-hidden'] });
+  assert.equal(calls.declarationFind.statut, 'ACTIVE');
+  assert.equal(calls.declarationFind.isDeleted, false);
+
+  await fetch(`${baseUrl}/api/search/notifications?lue=false&limit=5`, { headers: headers() });
+  assert.equal(calls.find.lue, false);
+  assert.equal(calls.limit, 5);
+  assert.equal(calls.find.destinataireId, OWNER_ID);
+
+  calls.declarationFind = null;
+  state.notifications = [];
+  state.unreadCount = 0;
+  const empty = await fetch(`${baseUrl}/api/search/notifications`, { headers: headers() });
+  const emptyBody = await empty.json();
+  assert.equal(empty.status, 200);
+  assert.deepEqual(emptyBody.data, []);
+  assert.equal(emptyBody.unreadCount, 0);
+  assert.equal(calls.declarationFind, null);
+});
+
+test('Marking notifications as read is limited to the owner and localized', async (t) => {
+  const { state, calls, baseUrl, headers, close } = await startNotificationApp();
+  t.after(close);
+
+  const one = {
+    en: ['Notification marked as read', 'Notification not found'],
+    fr: ['Notification marquée comme lue', 'Notification introuvable'],
+    ar: ['تم وضع علامة مقروء على الإشعار', 'الإشعار غير موجود'],
+    es: ['Notification marked as read', 'Notification not found']
+  };
+  const all = {
+    en: 'Notifications marked as read',
+    fr: 'Notifications marquées comme lues',
+    ar: 'تم وضع علامة مقروء على الإشعارات',
+    es: 'Notifications marked as read'
+  };
+
+  for (const language of Object.keys(one)) {
+    state.updated = { _id: NOTIFICATION_ID, lue: true };
+    const done = await fetch(`${baseUrl}/api/search/notifications/${NOTIFICATION_ID}/read`, { method: 'PATCH', headers: headers(language) });
+    assert.equal(done.status, 200, language);
+    const doneBody = await done.json();
+    assert.equal(doneBody.message, one[language][0], language);
+    assert.deepEqual(doneBody.data, { _id: NOTIFICATION_ID, lue: true });
+
+    state.updated = null;
+    const missing = await fetch(`${baseUrl}/api/search/notifications/${NOTIFICATION_ID}/read`, { method: 'PATCH', headers: headers(language) });
+    assert.equal(missing.status, 404, language);
+    const missingBody = await missing.json();
+    assert.equal(missingBody.error.code, 'RESOURCE_NOT_FOUND');
+    assert.equal(missingBody.error.message, one[language][1], language);
+
+    const readAll = await fetch(`${baseUrl}/api/search/notifications/read-all`, { method: 'PATCH', headers: headers(language) });
+    assert.equal(readAll.status, 200, language);
+    const readAllBody = await readAll.json();
+    assert.equal(readAllBody.message, all[language], language);
+    assert.deepEqual(readAllBody.data, { modifiedCount: 3 });
+  }
+
+  assert.deepEqual(calls.update.filter, {
+    _id: NOTIFICATION_ID,
+    destinataireId: OWNER_ID,
+    type: { $in: ['SAVED_SEARCH_MATCH'] }
+  });
+  assert.deepEqual(calls.update.update, { $set: { lue: true } });
+  assert.deepEqual(calls.updateMany.filter, {
+    destinataireId: OWNER_ID,
+    type: { $in: ['SAVED_SEARCH_MATCH'] },
+    lue: false
+  });
+  assert.deepEqual(calls.updateMany.update, { $set: { lue: true } });
+});
+
+test('Notification limiters are separate from the other search limiters', async (t) => {
+  const { baseUrl, headersFor, close } = await startRateLimitApp();
+  const originals = {
+    find: Notification.find,
+    countDocuments: Notification.countDocuments,
+    updateMany: Notification.updateMany
+  };
+  Notification.find = () => ({ sort() { return this; }, limit() { return this; }, lean: async () => [] });
+  Notification.countDocuments = async () => 0;
+  Notification.updateMany = async () => ({ modifiedCount: 0 });
+  t.after(async () => {
+    Notification.find = originals.find;
+    Notification.countDocuments = originals.countDocuments;
+    Notification.updateMany = originals.updateMany;
+    await close();
+  });
+  const headers = headersFor('607f1f77bcf86cd79943a001');
+
+  for (let index = 1; index <= 30; index += 1) {
+    const response = await fetch(`${baseUrl}/api/search/notifications`, { headers });
+    assert.equal(response.status, 200, `read ${index}`);
+  }
+  const limited = await fetch(`${baseUrl}/api/search/notifications`, { headers });
+  assert.equal(limited.status, 429);
+  assert.equal((await limited.json()).error.code, 'TOO_MANY_REQUESTS');
+
+  assert.equal((await fetch(`${baseUrl}/api/search/saved`, { headers })).status, 200);
+  assert.equal((await fetch(`${baseUrl}/api/search/recent`, { headers })).status, 200);
+  assert.equal((await fetch(`${baseUrl}/api/search/notifications/read-all`, { method: 'PATCH', headers })).status, 200);
 });

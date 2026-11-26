@@ -668,3 +668,70 @@ export const notifySavedSearchMatches = async (declaration) => {
     logger.error({ err: error }, 'Saved search alert failed');
   }
 };
+
+// 14. Search Notifications
+const SEARCH_NOTIFICATION_TYPES = [SAVED_SEARCH_MATCH];
+
+const toPublicNotification = (notification, declarationTitles, messages) => {
+  const declarationTitle = declarationTitles.get(String(notification.referenceId));
+
+  return {
+    _id: notification._id,
+    type: notification.type,
+    titre: messages.savedSearchMatchTitle,
+    contenu: declarationTitle
+      ? messages.savedSearchMatchBody(declarationTitle)
+      : messages.savedSearchMatchBodyUnavailable,
+    referenceId: notification.referenceId,
+    referenceType: notification.referenceType,
+    lue: notification.lue,
+    createdAt: notification.createdAt
+  };
+};
+
+export const listSearchNotifications = async ({ userId, lue, limit = 20, messages }) => {
+  const ownFilter = { destinataireId: userId, type: { $in: SEARCH_NOTIFICATION_TYPES } };
+  const filter = lue === undefined ? ownFilter : { ...ownFilter, lue };
+
+  const [notifications, unreadCount] = await Promise.all([
+    Notification.find(filter).sort({ createdAt: -1, _id: -1 }).limit(limit).lean(),
+    Notification.countDocuments({ ...ownFilter, lue: false })
+  ]);
+
+  const declarationIds = notifications
+    .filter((notification) => notification.referenceType === 'Declaration')
+    .map((notification) => notification.referenceId);
+
+  const declarations = declarationIds.length > 0
+    ? await Declaration.find({ _id: { $in: declarationIds }, ...buildMongoFilter({}) })
+      .select({ titre: 1 })
+      .lean()
+    : [];
+  const declarationTitles = new Map(declarations.map(({ _id, titre }) => [String(_id), titre]));
+
+  return {
+    notifications: notifications.map((notification) =>
+      toPublicNotification(notification, declarationTitles, messages)
+    ),
+    unreadCount
+  };
+};
+
+export const markNotificationAsRead = async ({ userId, id }) => {
+  const notification = await Notification.findOneAndUpdate(
+    { _id: id, destinataireId: userId, type: { $in: SEARCH_NOTIFICATION_TYPES } },
+    { $set: { lue: true } },
+    { new: true }
+  ).lean();
+
+  return notification ? { _id: notification._id, lue: notification.lue } : null;
+};
+
+export const markAllNotificationsAsRead = async (userId) => {
+  const result = await Notification.updateMany(
+    { destinataireId: userId, type: { $in: SEARCH_NOTIFICATION_TYPES }, lue: false },
+    { $set: { lue: true } }
+  );
+
+  return result.modifiedCount;
+};

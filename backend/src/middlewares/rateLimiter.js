@@ -43,3 +43,5 @@ export const recentSearchLimiter = createSearchLimiter(30);
 export const filtersSearchLimiter = createSearchLimiter(30);
 export const savedSearchReadLimiter = createSearchLimiter(30);
 export const savedSearchWriteLimiter = createSearchLimiter(10);
+export const notificationsReadLimiter = createSearchLimiter(30);
+export const notificationsWriteLimiter = createSearchLimiter(30);

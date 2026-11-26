@@ -11,7 +11,9 @@ import {
   recentSearchLimiter,
   filtersSearchLimiter,
   savedSearchReadLimiter,
-  savedSearchWriteLimiter
+  savedSearchWriteLimiter,
+  notificationsReadLimiter,
+  notificationsWriteLimiter
 } from '../../middlewares/rateLimiter.js';
 import * as declarationSearchController from '../../controllers/search/declarationSearchController.js';
 import { TypeDeclaration } from '../../models/enums.js';
@@ -195,6 +197,19 @@ const savedSearchIdParamsSchema = z.object({
   id: z.string().regex(/^[0-9a-fA-F]{24}$/, 'Identifiant invalide')
 });
 
+const notificationsQuerySchema = z.object({
+  lue: z.enum(['true', 'false']).transform((value) => value === 'true').optional(),
+  limit: z.string().regex(/^\d+$/, 'limit doit être un entier positif')
+    .transform(Number)
+    .pipe(z.number().int().positive().max(50).safe())
+    .optional()
+    .default('20')
+});
+
+const notificationIdParamsSchema = z.object({
+  id: z.string().regex(/^[0-9a-fA-F]{24}$/, 'Identifiant invalide')
+});
+
 // 4. Middleware
 router.use(authMiddleware);
 
@@ -245,6 +260,23 @@ router.delete(
   savedSearchWriteLimiter,
   validateRequest(savedSearchIdParamsSchema, 'params'),
   declarationSearchController.deleteSavedSearch
+);
+router.get(
+  '/notifications',
+  notificationsReadLimiter,
+  validateRequest(notificationsQuerySchema, 'query'),
+  declarationSearchController.listNotifications
+);
+router.patch(
+  '/notifications/read-all',
+  notificationsWriteLimiter,
+  declarationSearchController.markAllNotificationsRead
+);
+router.patch(
+  '/notifications/:id/read',
+  notificationsWriteLimiter,
+  validateRequest(notificationIdParamsSchema, 'params'),
+  declarationSearchController.markNotificationRead
 );
 
 // 6. Exports

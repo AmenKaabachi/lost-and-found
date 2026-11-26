@@ -2,6 +2,13 @@
 const NLP_SERVICE_URL =
   process.env.NLP_SERVICE_URL || 'http://127.0.0.1:8000';
 
+export class NlpServiceError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'NlpServiceError';
+  }
+}
+
 /**
  * Vérifie que le service Python est disponible.
  */
@@ -82,7 +89,7 @@ export async function getSemanticSimilarity(
       model: data.model
     };
   } catch (error) {
-    throw new Error(
+    throw new NlpServiceError(
       `Erreur lors de la comparaison NLP : ${error.message}`
     );
   }

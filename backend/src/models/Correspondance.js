@@ -74,6 +74,11 @@ const correspondanceSchema = new mongoose.Schema({
     default: StatutCorrespondance.PROPOSEE
   },
 
+  archivedAt: {
+    type: Date,
+    default: null
+  },
+
   // Réponses initiales des deux déclarants
   reponseDeclarantPerdu: {
     type: reponseSchema,

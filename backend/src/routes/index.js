@@ -7,11 +7,13 @@ import matchRouter from './matchRoutes.js';
 import declarationMatchRouter from './declarationMatchRoutes.js';
 import matchingConflictRouter from './matchingConflictRoutes.js';
 import resolutionRoutes from './resolutionRoutes.js';
+import matchingAdminRoutes from './matchingAdminRoutes.js';
 
 const router = Router();
 
 router.use('/auth', authRoutes);
 router.use('/matches', matchRouter);
+router.use('/admin/matches', matchingAdminRoutes);
 router.use('/matching/conflicts', matchingConflictRouter);
 router.use('/resolutions', resolutionRoutes);
 router.use('/declarations', declarationMatchRouter);

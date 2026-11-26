@@ -1,20 +1,7 @@
 
-import { getSemanticSimilarity } from './nlpClient.js';
+import { getSemanticSimilarity, NlpServiceError } from './nlpClient.js';
 import { TypeDeclaration, MoyenTransport } from '../../models/enums.js';
-
-const WEIGHTS = {
-  semantic: 45,
-  category: 15,
-  attributes: 15,
-  date: 10,
-  location: 10,
-  profile: 5
-};
-
-const CONFIDENCE_THRESHOLDS = {
-  HIGH: 80,
-  MEDIUM: 55
-};
+import { DEFAULT_MATCHING_SETTINGS } from './settingsService.js';
 
 // Répartition interne du critère profil.
 const PROFILE_WEIGHTS = {
@@ -288,14 +275,20 @@ function calculateProfileScore(lost, found) {
   return Number((weightedSum / totalWeight).toFixed(2));
 }
 
-function getConfidenceLevel(score) {
-  if (score >= CONFIDENCE_THRESHOLDS.HIGH) return 'HIGH';
-  if (score >= CONFIDENCE_THRESHOLDS.MEDIUM) return 'MEDIUM';
+function getConfidenceLevel(score, settings) {
+  if (score >= settings.highConfidenceThreshold) return 'HIGH';
+  if (score >= settings.minimumMatchScore) return 'MEDIUM';
 
   return 'LOW';
 }
 
-export async function calculateMatchScore(declarationA, declarationB) {
+export async function calculateMatchScore(
+  declarationA,
+  declarationB,
+  settings
+) {
+  const activeSettings = settings || DEFAULT_MATCHING_SETTINGS;
+
   if (!declarationA || !declarationB) {
     throw new Error('Deux déclarations sont nécessaires.');
   }
@@ -321,13 +314,20 @@ export async function calculateMatchScore(declarationA, declarationB) {
     );
   }
 
-  const semanticResult = await getSemanticSimilarity(
-    buildDeclarationText(lost),
-    buildDeclarationText(found)
-  );
+  let semanticResult = null;
+  try {
+    semanticResult = await getSemanticSimilarity(
+      buildDeclarationText(lost),
+      buildDeclarationText(found)
+    );
+  } catch (error) {
+    if (!(error instanceof NlpServiceError)) {
+      throw error;
+    }
+  }
 
   const criteria = {
-    semantic: semanticResult.percentage,
+    semantic: semanticResult?.percentage ?? null,
     category: calculateCategoryScore(lost, found),
     attributes: calculateAttributesScore(lost, found),
     date: calculateDateScore(lost, found),
@@ -340,7 +340,7 @@ export async function calculateMatchScore(declarationA, declarationB) {
   );
 
   const availableWeight = availableCriteria.reduce(
-    (sum, [criterion]) => sum + WEIGHTS[criterion],
+    (sum, [criterion]) => sum + activeSettings.weights[criterion],
     0
   );
 
@@ -349,7 +349,7 @@ export async function calculateMatchScore(declarationA, declarationB) {
   }
 
   const weightedSum = availableCriteria.reduce(
-    (sum, [criterion, score]) => sum + score * WEIGHTS[criterion],
+    (sum, [criterion, score]) => sum + score * activeSettings.weights[criterion],
     0
   );
 
@@ -360,7 +360,7 @@ export async function calculateMatchScore(declarationA, declarationB) {
   const breakdown = {};
 
   for (const [criterion, score] of Object.entries(criteria)) {
-    const weight = WEIGHTS[criterion];
+    const weight = activeSettings.weights[criterion];
 
     breakdown[criterion] = {
       score,
@@ -376,10 +376,11 @@ export async function calculateMatchScore(declarationA, declarationB) {
 
   return {
     score: globalScore,
-    confidence: getConfidenceLevel(globalScore),
+    confidence: getConfidenceLevel(globalScore, activeSettings),
     method: 'AUTO_NLP',
-    model: semanticResult.model,
+    model: semanticResult?.model ?? null,
     availableWeight,
-    breakdown
+    breakdown,
+    degradedCriteria: semanticResult ? [] : ['semantic']
   };
 }

@@ -105,6 +105,7 @@ export const getMatches = asyncHandler(async (req, res) => {
   );
 
   const filter = {};
+  filter.archivedAt = null;
 
   if (req.query.statut) {
     filter.statut = req.query.statut;

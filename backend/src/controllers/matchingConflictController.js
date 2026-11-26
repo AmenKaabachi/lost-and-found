@@ -481,3 +481,49 @@ export const relaunchConflict = asyncHandler(async (req, res) => {
     'Le recalcul du conflit est terminé'
   );
 });
+
+/**
+ * PATCH /api/matching/conflicts/:id/resolve
+ *
+ * Clôture administrative sans attribuer automatiquement l'objet.
+ */
+export const resolveConflict = asyncHandler(async (req, res) => {
+  requireAdmin(req.user);
+  const conflict = await loadConflict(req.params.id);
+
+  if (conflict.statut === StatutConflitMatching.RESOLU) {
+    throw new AppError(
+      409,
+      ERROR_CODES.STATUS_TRANSITION_FORBIDDEN,
+      'Ce conflit est déjà résolu'
+    );
+  }
+
+  const commentaire = req.body?.commentaire?.trim();
+  if (!commentaire) {
+    throw new AppError(
+      400,
+      ERROR_CODES.VALIDATION_ERROR,
+      'Un commentaire de clôture est obligatoire'
+    );
+  }
+
+  conflict.statut = StatutConflitMatching.RESOLU;
+  conflict.traiteParId = req.user._id;
+  conflict.dateResolution = new Date();
+  conflict.commentaireResolution = commentaire;
+  await conflict.save();
+
+  await createConflictAudit(
+    req.user._id,
+    'RESOLUTION_CONFLIT_MATCHING',
+    conflict._id,
+    { commentaire }
+  );
+
+  return sendSuccess(
+    res,
+    conflict,
+    'Conflit clôturé. Aucune correspondance n’a été déclarée gagnante.'
+  );
+});

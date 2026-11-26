@@ -11,6 +11,7 @@ import {
 } from '../../models/enums.js';
 
 import { calculateMatchScore } from './scoringService.js';
+import { getMatchingSettings } from './settingsService.js';
 
 const PROFILE_FIELDS = 'nomEtablissement lieuResidence moyenTransport';
 
@@ -137,6 +138,7 @@ export const relaunchConflictMatching = async (
   }
 
   const recalculatedMatches = [];
+  const settings = await getMatchingSettings();
 
   // Première phase : recalculer tous les scores.
   // Aucune modification en base n'est effectuée pendant cette phase.
@@ -178,7 +180,7 @@ export const relaunchConflictMatching = async (
       foundDeclarantId
     );
 
-    const scoreResult = await calculateMatchScore(lost, found);
+    const scoreResult = await calculateMatchScore(lost, found, settings);
 
     const score = Number(scoreResult.score);
 

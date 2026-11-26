@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 
 import Declaration from '../../models/Declaration.js';
 import Correspondance from '../../models/Correspondance.js';
+import Notification from '../../models/Notification.js';
 
 import {
   TypeDeclaration,
@@ -11,14 +12,58 @@ import {
 } from '../../models/enums.js';
 
 import { calculateMatchScore } from './scoringService.js';
+import { getMatchingSettings } from './settingsService.js';
 
 import {
   detectEqualScoreConflictForFoundDeclaration
 } from './conflictService.js';
 
-const MIN_MATCH_SCORE = 55;
-
 const PROFILE_FIELDS = 'nomEtablissement lieuResidence moyenTransport';
+
+const createMatchNotifications = async (correspondence, lost, found) => {
+  const notifications = [
+    {
+      destinataireId: lost.declarantId._id || lost.declarantId,
+      type: 'NOUVELLE_CORRESPONDANCE',
+      titre: 'Nouvelle correspondance proposée',
+      contenu: 'Une déclaration trouvée pourrait correspondre à votre objet perdu.'
+    },
+    {
+      destinataireId: found.declarantId._id || found.declarantId,
+      type: 'NOUVELLE_CORRESPONDANCE',
+      titre: 'Nouvelle correspondance proposée',
+      contenu: 'Une déclaration perdue pourrait correspondre à votre objet trouvé.'
+    }
+  ];
+
+  await Promise.all(notifications.map(async (notification) => {
+    try {
+      await Notification.findOneAndUpdate(
+        {
+          destinataireId: notification.destinataireId,
+          referenceId: correspondence._id,
+          type: notification.type
+        },
+        {
+          $setOnInsert: {
+            ...notification,
+            referenceId: correspondence._id,
+            referenceType: 'Correspondance',
+            lue: false
+          }
+        },
+        {
+          upsert: true,
+          setDefaultsOnInsert: true
+        }
+      );
+    } catch (error) {
+      if (error.code !== 11000) {
+        throw error;
+      }
+    }
+  }));
+};
 
 /**
  * Détermine les identifiants dans l'ordre PERDU puis TROUVE.
@@ -79,7 +124,8 @@ const buildMatchResult = (correspondence, scoreResult) => ({
   score: correspondence.score,
   confidence: scoreResult.confidence,
   methode: correspondence.methode,
-  breakdown: scoreResult.breakdown
+  breakdown: scoreResult.breakdown,
+  degradedCriteria: scoreResult.degradedCriteria
 });
 
 /**
@@ -116,6 +162,8 @@ export const runMatchingForDeclaration = async (declarationId) => {
   if (!declaration.declarantId) {
     throw new Error('Déclarant introuvable pour cette déclaration.');
   }
+
+  const settings = await getMatchingSettings();
 
   const declarantId = declaration.declarantId._id
     ? declaration.declarantId._id
@@ -169,7 +217,8 @@ export const runMatchingForDeclaration = async (declarationId) => {
 
     const scoreResult = await calculateMatchScore(
       declaration,
-      candidate
+      candidate,
+      settings
     );
 
     const score = Number(scoreResult.score);
@@ -180,7 +229,7 @@ export const runMatchingForDeclaration = async (declarationId) => {
       );
     }
 
-    if (!existingCorrespondence && score < MIN_MATCH_SCORE) {
+    if (!existingCorrespondence && score < settings.minimumMatchScore) {
       skippedBelowThreshold++;
       continue;
     }
@@ -237,6 +286,18 @@ export const runMatchingForDeclaration = async (declarationId) => {
     }
 
     savedMatches++;
+
+    const lostDeclaration = declarationPerdueId.toString() === declaration._id.toString()
+      ? declaration
+      : candidate;
+    const foundDeclaration = declarationTrouveeId.toString() === declaration._id.toString()
+      ? declaration
+      : candidate;
+    await createMatchNotifications(
+      correspondence,
+      lostDeclaration,
+      foundDeclaration
+    );
 
     matches.push(buildMatchResult(correspondence, scoreResult));
   }

@@ -12,5 +12,12 @@ const notificationSchema = new mongoose.Schema({
 
 notificationSchema.index({ destinataireId: 1, lue: 1 });
 notificationSchema.index({ createdAt: -1 });
+notificationSchema.index(
+  { destinataireId: 1, referenceId: 1, type: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { type: 'NOUVELLE_CORRESPONDANCE' }
+  }
+);
 
 export default mongoose.model('Notification', notificationSchema);

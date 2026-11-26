@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import logger from '../errors/logging/logger.js';
 import { TypeDeclaration, StatutDeclaration, StatutGarde } from './enums.js';
 
 const itemDetailsSchema = new mongoose.Schema({
@@ -42,5 +43,19 @@ const declarationSchema = new mongoose.Schema({
 declarationSchema.index({ type: 1, statut: 1, categorieId: 1 });
 declarationSchema.index({ 'lieu.zone': 1 });
 declarationSchema.index({ createdAt: -1 });
+
+// Saved search alerts: runs after a declaration is created as ACTIVE or becomes ACTIVE
+declarationSchema.pre('save', function () {
+  this.$locals.becomesActive = this.statut === StatutDeclaration.ACTIVE
+    && (this.isNew || this.isModified('statut'));
+});
+
+declarationSchema.post('save', function (declaration) {
+  if (!declaration.$locals.becomesActive) return;
+
+  import('../services/search/declarationSearchService.js')
+    .then(({ notifySavedSearchMatches }) => notifySavedSearchMatches(declaration))
+    .catch((error) => logger.error({ err: error }, 'Saved search alert hook failed'));
+});
 
 export default mongoose.model('Declaration', declarationSchema);

@@ -2,6 +2,9 @@
 import Declaration from '../../models/Declaration.js';
 import Categorie from '../../models/Categorie.js';
 import RechercheEnregistree from '../../models/RechercheEnregistree.js';
+import Notification from '../../models/Notification.js';
+import logger from '../../errors/logging/logger.js';
+import { translations, defaultLocale } from '../../errors/localization/translation.js';
 import { StatutDeclaration } from '../../models/enums.js';
 import {
   buildKeywordRegex,
@@ -611,4 +614,57 @@ export const deleteSavedSearch = async ({ userId, id }) => {
   });
 
   return Boolean(deletedSearch);
+};
+
+
+// 13. Saved Search Alerts
+const SAVED_SEARCH_MATCH = 'SAVED_SEARCH_MATCH';
+const ALERT_SEARCHES_LIMIT = 1000;
+
+const removeEmptyFilters = (filters = {}) => Object.fromEntries(
+  Object.entries(filters).filter(([, value]) => value !== null && value !== undefined)
+);
+
+export const notifySavedSearchMatches = async (declaration) => {
+  try {
+    const savedSearches = await RechercheEnregistree.find({ alerteEmail: true })
+      .limit(ALERT_SEARCHES_LIMIT)
+      .lean();
+    const fallback = translations[defaultLocale];
+    const notifiedUsers = new Set();
+
+    for (const savedSearch of savedSearches) {
+      const userId = String(savedSearch.utilisateurId);
+
+      if (notifiedUsers.has(userId) || userId === String(declaration.declarantId)) continue;
+
+      const matchesSearch = await Declaration.exists({
+        _id: declaration._id,
+        ...buildMongoFilter(removeEmptyFilters(savedSearch.filtres))
+      });
+
+      if (!matchesSearch) continue;
+
+      notifiedUsers.add(userId);
+
+      const alreadyNotified = await Notification.exists({
+        destinataireId: savedSearch.utilisateurId,
+        type: SAVED_SEARCH_MATCH,
+        referenceId: declaration._id
+      });
+
+      if (alreadyNotified) continue;
+
+      await Notification.create({
+        destinataireId: savedSearch.utilisateurId,
+        type: SAVED_SEARCH_MATCH,
+        titre: fallback.savedSearchMatchTitle,
+        contenu: fallback.savedSearchMatchBody(declaration.titre),
+        referenceId: declaration._id,
+        referenceType: 'Declaration'
+      });
+    }
+  } catch (error) {
+    logger.error({ err: error }, 'Saved search alert failed');
+  }
 };

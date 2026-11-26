@@ -1,9 +1,14 @@
 // 1. Imports
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import mongoose from 'mongoose';
 import Declaration from '../../src/models/Declaration.js';
-import { searchDeclarations } from '../../src/services/search/declarationSearchService.js';
-
+import RechercheEnregistree from '../../src/models/RechercheEnregistree.js';
+import Notification from '../../src/models/Notification.js';
+import {
+  searchDeclarations,
+  notifySavedSearchMatches
+} from '../../src/services/search/declarationSearchService.js';
 // 2. Test Setup
 test('Declaration search builds ACTIVE, deletion and archive filters', async (t) => {
   const originalFind = Declaration.find;
@@ -318,4 +323,155 @@ test('Declaration search applies date, relevance and distance sorting', async (t
   assert.equal(radius.pagination.totalPages, 1);
   assert.equal(radius.pagination.hasNextPage, false);
   assert.equal(radius.pagination.hasPreviousPage, false);
+});
+
+
+// 3. Saved Search Alert Tests
+const stubAlertModels = ({ savedSearches = [], existingNotification = false, matches = () => true } = {}) => {
+  const originals = {
+    find: RechercheEnregistree.find,
+    exists: Declaration.exists,
+    notificationExists: Notification.exists,
+    create: Notification.create
+  };
+  const calls = { savedSearchFilter: null, existsFilters: [], created: [] };
+
+  RechercheEnregistree.find = (filter) => {
+    calls.savedSearchFilter = filter;
+    return { limit() { return this; }, lean: async () => savedSearches };
+  };
+  Declaration.exists = async (filter) => {
+    calls.existsFilters.push(filter);
+    return matches(filter) ? { _id: 'match' } : null;
+  };
+  Notification.exists = async () => (existingNotification ? { _id: 'existing' } : null);
+  Notification.create = async (payload) => {
+    calls.created.push(payload);
+    return payload;
+  };
+
+  return {
+    calls,
+    restore: () => {
+      RechercheEnregistree.find = originals.find;
+      Declaration.exists = originals.exists;
+      Notification.exists = originals.notificationExists;
+      Notification.create = originals.create;
+    }
+  };
+};
+
+const newDeclaration = { _id: 'decl-1', declarantId: 'author-1', titre: 'Green wallet', statut: 'ACTIVE' };
+const emptyFilters = { type: null, q: null, categorie: null, couleur: null, marque: null, lieu: null, zoneCampus: null, dateDebut: null, dateFin: null, lat: null, lng: null, radius: null, sort: null };
+
+test('Saved search alert notifies each matching owner once and skips the author', async (t) => {
+  const { calls, restore } = stubAlertModels({
+    savedSearches: [
+      { utilisateurId: 'user-1', filtres: { ...emptyFilters, type: 'PERDU', q: 'wallet' } },
+      { utilisateurId: 'user-1', filtres: { ...emptyFilters, couleur: 'vert' } },
+      { utilisateurId: 'user-2', filtres: { ...emptyFilters, type: 'TROUVE' } },
+      { utilisateurId: 'author-1', filtres: { ...emptyFilters, type: 'PERDU' } }
+    ],
+    matches: (filter) => filter.type !== 'TROUVE'
+  });
+  t.after(restore);
+
+  await notifySavedSearchMatches(newDeclaration);
+
+  assert.deepEqual(calls.savedSearchFilter, { alerteEmail: true });
+  assert.equal(calls.created.length, 1);
+  assert.equal(calls.created[0].destinataireId, 'user-1');
+  assert.equal(calls.created[0].type, 'SAVED_SEARCH_MATCH');
+  assert.equal(calls.created[0].referenceId, 'decl-1');
+  assert.equal(calls.created[0].referenceType, 'Declaration');
+  assert.equal(calls.created[0].titre, 'New declaration matching your saved search');
+  assert.equal(calls.created[0].contenu, 'A new declaration matches your saved search: Green wallet');
+
+  const firstFilter = calls.existsFilters[0];
+  assert.equal(firstFilter._id, 'decl-1');
+  assert.equal(firstFilter.statut, 'ACTIVE');
+  assert.equal(firstFilter.isDeleted, false);
+  assert.equal(firstFilter.type, 'PERDU');
+  assert.equal('lieu.latitude' in firstFilter, false);
+  assert.equal('$expr' in firstFilter, false);
+});
+
+test('Saved search alert does not duplicate an existing notification', async (t) => {
+  const { calls, restore } = stubAlertModels({
+    savedSearches: [{ utilisateurId: 'user-1', filtres: { ...emptyFilters, type: 'PERDU' } }],
+    existingNotification: true
+  });
+  t.after(restore);
+
+  await notifySavedSearchMatches(newDeclaration);
+
+  assert.equal(calls.created.length, 0);
+});
+
+test('Saved search alert never throws when the database fails', async (t) => {
+  const { calls, restore } = stubAlertModels();
+  t.after(restore);
+  RechercheEnregistree.find = () => {
+    throw new Error('database down');
+  };
+
+  await assert.doesNotReject(() => notifySavedSearchMatches(newDeclaration));
+  assert.equal(calls.created.length, 0);
+});
+
+test('Declaration hook triggers alerts only when a declaration becomes ACTIVE', async (t) => {
+  const originalFind = RechercheEnregistree.find;
+  const originalInsert = Declaration.collection.insertOne;
+  const originalUpdate = Declaration.collection.updateOne;
+  let alertRuns = 0;
+
+  RechercheEnregistree.find = () => {
+    alertRuns += 1;
+    return { limit() { return this; }, lean: async () => [] };
+  };
+  Declaration.collection.insertOne = async () => ({ acknowledged: true });
+  Declaration.collection.updateOne = async () => ({ acknowledged: true, matchedCount: 1, modifiedCount: 1 });
+  t.after(() => {
+    RechercheEnregistree.find = originalFind;
+    Declaration.collection.insertOne = originalInsert;
+    Declaration.collection.updateOne = originalUpdate;
+  });
+
+  const base = {
+    declarantId: new mongoose.Types.ObjectId(),
+    type: 'PERDU',
+    titre: 'Sac',
+    description: 'Description',
+    categorieId: new mongoose.Types.ObjectId(),
+    dateEvenement: new Date(),
+    isDeleted: false
+  };
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 50));
+  const stored = (statut) => Declaration.hydrate({ _id: new mongoose.Types.ObjectId(), ...base, statut });
+
+  await new Declaration({ ...base, statut: 'ACTIVE' }).save();
+  await settle();
+  assert.equal(alertRuns, 1, 'created as ACTIVE');
+
+  await new Declaration({ ...base, statut: 'EN_ATTENTE' }).save();
+  await settle();
+  assert.equal(alertRuns, 1, 'created as EN_ATTENTE');
+
+  const pending = stored('EN_ATTENTE');
+  pending.statut = 'ACTIVE';
+  await pending.save();
+  await settle();
+  assert.equal(alertRuns, 2, 'EN_ATTENTE becomes ACTIVE');
+
+  const active = stored('ACTIVE');
+  active.titre = 'Autre titre';
+  await active.save();
+  await settle();
+  assert.equal(alertRuns, 2, 'ACTIVE declaration edited');
+
+  const hidden = stored('ACTIVE');
+  hidden.statut = 'MASQUEE';
+  await hidden.save();
+  await settle();
+  assert.equal(alertRuns, 2, 'ACTIVE becomes MASQUEE');
 });
